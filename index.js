@@ -227,6 +227,46 @@ client.on('messageCreate', async message => {
         // Apaga o comando !data para limpar o chat
         setTimeout(() => message.delete().catch(() => {}), 2000);
     }
+
+    // COMANDO: !ajuda
+    if (message.content === '!ajuda') {
+        const embedAjuda = new EmbedBuilder()
+            .setTitle('📖 Guia de Operação - Organizador de Torre')
+            .setDescription('Siga o roteiro abaixo para organizar sua subida com eficiência:')
+            .setColor('#ffffff')
+            .addFields(
+                { 
+                    name: '🚀 Roteiro de Organização (Passo a Passo)', 
+                    value: '1️⃣ **Defina o Horário:** Use `!data DD/MM/AAAA HH:MM` para marcar o início. (Horário de Brasília)\n' +
+                           '2️⃣ **Inicie a Chamada:** Use `!torre` para gerar o painel de classes.\n' +
+                           '3️⃣ **Aguarde as Inscrições:** O cronômetro atualizará sozinho conforme o tempo passa.\n' +
+                           '4️⃣ **Ajustes:** Use `!remover @Nick` se precisar liberar alguma vaga manualmente.'
+                },
+                { 
+                    name: '🎮 Comandos de Jogador', 
+                    value: '• `!torre` - Mostra o painel de inscrição atual.\n' +
+                           '• **Botão Sair:** Remove você da classe que escolheu.'
+                },
+                { 
+                    name: '🛠️ Comandos de Líder (Dono do Tópico ou Admin)', 
+                    value:  '• `!data` - Define/Altera o horário do evento.\n' +
+                            '• `!remover @Nick` - Retira um membro da vaga ocupada.\n' +
+                            '• **Botão Resetar:** Limpa todas as vagas daquela torre.'
+                },
+                { 
+                    name: '💡 Dicas de Ouro', 
+                    value:  '• Crie um **Tópico Novo** para cada torre (assim as listas não se misturam).\n' +
+                            '• As cores do painel mudam: 🔵 (Longe), 🟡 (Faltam 2h), 🔴 (Atrasado).\n' +
+                            '• O sistema limpa automaticamente listas de eventos passados.'
+                }
+            )
+            .setFooter({ text: 'Sistema de Apoio ao Clã - Versão Final' });
+
+        await message.channel.send({ embeds: [embedAjuda] });
+    
+        // Apaga o comando !ajuda após 30 segundos para manter o chat limpo
+        setTimeout(() => message.delete().catch(() => {}), 30000);
+    }
 });
 
 client.on('interactionCreate', async interaction => {
