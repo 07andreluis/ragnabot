@@ -16,13 +16,13 @@ mongoose.connect(process.env.MONGO_URI)
 
 // Esquema do Banco de Dados
 const TorreSchema = new mongoose.Schema({
-    eventoId: { type: String, default: 'torre_semanal' },
+    eventoId: { type: String, required: true }, 
     inscritos: {
         type: Map,
         of: [String],
         default: {
-            'HP': [], 'Sniper': [], 'Devo': [], 'Champ CF': [], 'Champ Asura': [],
-            'Professor': [], 'Bragi': [], 'Dancer': [], 'Creator': []
+            'HP': [], 'Sniper': [], 'Devo': [], 'Champ CF': [],
+            'Champ Asura': [], 'Professor': [], 'Bragi': [], 'Dancer': [], 'Creator': []
         }
     }
 });
@@ -49,19 +49,27 @@ const CONFIG_TORRE = {
     'Creator': { limite: 1, emoji: '🧪' }
 };
 
-async function getDadosTorre() {
-    let dados = await Torre.findOne({ eventoId: 'torre_semanal' });
-    if (!dados) dados = await Torre.create({ eventoId: 'torre_semanal' });
+async function getDadosTorre(idDoCanal) {
+    let dados = await Torre.findOne({ eventoId: idDoCanal });
+    if (!dados) {
+        dados = await Torre.create({ 
+            eventoId: idDoCanal,
+            inscritos: {
+                'HP': [], 'Sniper': [], 'Devo': [], 'Champ CF': [],
+                'Champ Asura': [], 'Professor': [], 'Bragi': [], 'Dancer': [], 'Creator': []
+            }
+        });
+    }
     return dados;
 }
 
-async function gerarEmbed() {
-    const dados = await getDadosTorre();
+async function gerarEmbed(idDoCanal) {
+    const dados = await getDadosTorre(idDoCanal);
     const embed = new EmbedBuilder()
         .setTitle('🏰 Torre Sem Fim - Inscrição')
-        .setDescription('Selecione sua classe abaixo. A lista é atualizada em tempo real!')
+        .setDescription('Selecione sua classe abaixo. Esta lista é exclusiva para este tópico!')
         .setColor('#2b2d31')
-        .setFooter({ text: 'Ragnarok Online - Organizador de Torre' });
+        .setFooter({ text: `ID do Evento: ${idDoCanal}` });
 
     for (const [classe, info] of Object.entries(CONFIG_TORRE)) {
         const listaIds = dados.inscritos.get(classe) || [];
@@ -104,7 +112,8 @@ client.once('ready', () => {
 
 client.on('messageCreate', async message => {
     if (message.content === '!torre' && !message.author.bot) {
-        const embed = await gerarEmbed();
+        // Passamos o ID do canal (ou tópico) atual
+        const embed = await gerarEmbed(message.channel.id);
         await message.channel.send({ embeds: [embed], components: gerarBotoes() });
     }
 });
@@ -112,14 +121,17 @@ client.on('messageCreate', async message => {
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
     const userId = `<@${interaction.user.id}>`;
-    const dados = await getDadosTorre();
+    
+    // Pegamos o ID do canal onde o botão foi clicado
+    const canalId = interaction.channel.id;
+    const dados = await getDadosTorre(canalId);
 
     if (interaction.customId === 'sair') {
         for (let [classe, lista] of dados.inscritos) {
             dados.inscritos.set(classe, lista.filter(id => id !== userId));
         }
         await dados.save();
-        return interaction.update({ embeds: [await gerarEmbed()] });
+        return interaction.update({ embeds: [await gerarEmbed(canalId)] });
     }
 
     if (interaction.customId === 'reset') {
@@ -130,7 +142,7 @@ client.on('interactionCreate', async interaction => {
             dados.inscritos.set(classe, []);
         }
         await dados.save();
-        return interaction.update({ embeds: [await gerarEmbed()] });
+        return interaction.update({ embeds: [await gerarEmbed(canalId)] });
     }
 
     const classeEscolhida = interaction.customId.replace('insc_', '');
@@ -142,14 +154,14 @@ client.on('interactionCreate', async interaction => {
         if (lista.includes(userId)) jaInscrito = true;
     }
 
-    if (jaInscrito) return interaction.reply({ content: 'Você já está em uma classe! Saia primeiro para trocar.', ephemeral: true });
+    if (jaInscrito) return interaction.reply({ content: 'Você já está em uma classe neste tópico!', ephemeral: true });
     if (listaAtual.length >= info.limite) return interaction.reply({ content: 'Esta classe já está cheia!', ephemeral: true });
 
     listaAtual.push(userId);
     dados.inscritos.set(classeEscolhida, listaAtual);
     await dados.save();
 
-    await interaction.update({ embeds: [await gerarEmbed()] });
+    await interaction.update({ embeds: [await gerarEmbed(canalId)] });
 });
 
 client.login(process.env.DISCORD_TOKEN);
