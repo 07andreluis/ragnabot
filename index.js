@@ -142,32 +142,46 @@ client.once('ready', () => {
     console.log(`🚀 Bot online como ${client.user.tag}! Digite !torre no Discord.`);
 });
 
+// --- FUNÇÃO DE LIMPEZA ---
+async function limparEventosAntigos() {
+    const umDiaAtras = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await Torre.deleteMany({
+        dataEvento: { $lt: umDiaAtras, $ne: null }
+    });
+}
+
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
-    // COMANDO: !torre que mostra o Embed
+
+    // Comando !torre com Faxina Automática
     if (message.content === '!torre') {
+        await limparEventosAntigos(); // Limpa o lixo antes de mostrar a nova
         const embed = await gerarEmbed(message.channel.id);
         await message.channel.send({ embeds: [embed], components: gerarBotoes() });
     }
-    // COMANDO: !remover @usuario (Apenas Admin)
+
+    // Comando !remover @usuario (Com permissão flexível)
     if (message.content.startsWith('!remover')) {
-    // 1. Verifica se quem enviou é administrador
-        if (!message.member.permissions.has('Administrator')) {
-        // Apaga a tentativa de comando de quem não é admin para não sujar o chat
+        const isThread = message.channel.isThread();
+        const isThreadOwner = isThread && message.channel.ownerId === message.author.id;
+        const isAdmin = message.member.permissions.has('Administrator');
+
+        // Se não for Admin E não for o dono do tópico, bloqueia
+        if (!isAdmin && !isThreadOwner) {
             setTimeout(() => message.delete().catch(() => {}), 1000);
-            return message.reply({ content: 'Apenas administradores podem remover membros.', flags: [64] });
+            return message.reply({ 
+                content: 'Apenas administradores ou o criador deste tópico podem remover membros.', 
+                flags: [64] 
+            });
         }
 
         const usuarioParaRemover = message.mentions.users.first();
-        if (!usuarioParaRemover) {
-            return message.reply('Marque o usuário que deseja remover. Ex: `!remover @Nick`');
-        }
+        if (!usuarioParaRemover) return message.reply('Marque o usuário: `!remover @Nick`');
 
         const userIdRemover = `<@${usuarioParaRemover.id}>`;
         const dados = await getDadosTorre(message.channel.id);
         let removido = false;
 
-        // 2. Procura o usuário em todas as classes
         for (let [classe, lista] of dados.inscritos) {
             if (lista.includes(userIdRemover)) {
                 dados.inscritos.set(classe, lista.filter(id => id !== userIdRemover));
@@ -177,22 +191,15 @@ client.on('messageCreate', async message => {
 
         if (removido) {
             await dados.save();
-        
-            // 3. Gera o novo embed atualizado
             const embed = await gerarEmbed(message.channel.id);
-        
-            // 4. Envia a confirmação e o novo painel
             await message.channel.send({ 
-                content: `✅ ${usuarioParaRemover} foi removido da lista pelo administrador.`, 
+                content: `✅ ${usuarioParaRemover} foi removido por ${message.author}.`, 
                 embeds: [embed], 
                 components: gerarBotoes() 
             });
-
-            // 5. Apaga o comando !remover para manter o chat limpo
-            await message.delete().catch(err => console.error("Erro ao apagar mensagem:", err));
-        
+            await message.delete().catch(() => {});
         } else {
-            message.reply('Este usuário não está inscrito em nenhuma classe neste tópico.');
+            message.reply('Este usuário não está na lista.');
         }
     }
     
