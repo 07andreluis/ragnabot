@@ -16,7 +16,8 @@ mongoose.connect(process.env.MONGO_URI)
 
 // Esquema do Banco de Dados
 const TorreSchema = new mongoose.Schema({
-    eventoId: { type: String, required: true }, 
+    eventoId: { type: String, required: true },
+    dataEvento: { type: Date, default: null },
     inscritos: {
         type: Map,
         of: [String],
@@ -49,6 +50,20 @@ const CONFIG_TORRE = {
     'Creator': { limite: 1, emoji: '🧪' }
 };
 
+function calcularContagem(dataEvento) {
+    if (!dataEvento) return "Data não definida.";
+    
+    const agora = new Date();
+    const diff = dataEvento - agora;
+
+    if (diff <= 0) return "🚀 **O evento já começou ou aconteceu!**";
+
+    const horas = Math.floor(diff / (1000 * 60 * 60));
+    const minutos = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+    return `⏳ Faltam **${horas}h e ${minutos}m** para o início.`;
+}
+
 async function getDadosTorre(idDoCanal) {
     let dados = await Torre.findOne({ eventoId: idDoCanal });
     if (!dados) {
@@ -65,10 +80,12 @@ async function getDadosTorre(idDoCanal) {
 
 async function gerarEmbed(idDoCanal) {
     const dados = await getDadosTorre(idDoCanal);
+    const contagemTexto = calcularContagem(dados.dataEvento);
+
     const embed = new EmbedBuilder()
         .setTitle('🏰 Torre Sem Fim - Inscrição')
-        .setDescription('Selecione sua classe abaixo. Esta lista é exclusiva para este tópico!')
-        .setColor('#2b2d31')
+        .setDescription(`${contagemTexto}\n\nSelecione sua classe abaixo. Esta lista é exclusiva para este tópico!`)
+        .setColor(dados.dataEvento && (dados.dataEvento - new Date() > 0) ? '#5865F2' : '#2b2d31')
         .setFooter({ text: `ID do Evento: ${idDoCanal}` });
 
     for (const [classe, info] of Object.entries(CONFIG_TORRE)) {
@@ -111,10 +128,38 @@ client.once('ready', () => {
 });
 
 client.on('messageCreate', async message => {
-    if (message.content === '!torre' && !message.author.bot) {
-        // Passamos o ID do canal (ou tópico) atual
+    if (message.author.bot) return;
+    // COMANDO: !torre que mostra o Embed
+    if (message.content === '!torre') {
         const embed = await gerarEmbed(message.channel.id);
         await message.channel.send({ embeds: [embed], components: gerarBotoes() });
+    }
+
+    // COMANDO: !data DD/MM/AAAA HH:MM
+    if (message.content.startsWith('!data')) {
+        const args = message.content.split(' ');
+        if (args.length < 3) {
+            return message.reply('Use o formato: `!data DD/MM/AAAA HH:MM`');
+        }
+
+        const dataString = args[1]; // DD/MM/AAAA
+        const horaString = args[2]; // HH:MM
+
+        const [dia, mes, ano] = dataString.split('/');
+        const [hora, min] = horaString.split(':');
+
+        // Criar data (Mês no JS começa em 0, então mes - 1)
+        const novaData = new Date(ano, mes - 1, dia, hora, min);
+
+        if (isNaN(novaData)) {
+            return message.reply('Data ou hora inválida! Verifique o formato DD/MM/AAAA HH:MM');
+        }
+
+        const dados = await getDadosTorre(message.channel.id);
+        dados.dataEvento = novaData;
+        await dados.save();
+
+        message.reply(`✅ Horário do evento definido para: **${novaData.toLocaleString('pt-BR')}**! Digite \`!torre\` para ver a lista atualizada.`);
     }
 });
 
@@ -163,5 +208,18 @@ client.on('interactionCreate', async interaction => {
 
     await interaction.update({ embeds: [await gerarEmbed(canalId)] });
 });
+
+// --- ESTRATÉGIA DE AUTO-PING PARA O RENDER ---
+const URL_DO_MEU_BOT = "https://organizador-dsss.onrender.com";
+
+setInterval(() => {
+    http.get(URL_DO_MEU_BOT, (res) => {
+        if (res.statusCode === 200) {
+            console.log("⚓ Auto-Ping realizado com sucesso: Bot acordado!");
+        }
+    }).on('error', (err) => {
+        console.error("❌ Erro no Auto-Ping interno: " + err.message);
+    });
+}, 600000); // 600.000ms = 10 minutos
 
 client.login(process.env.DISCORD_TOKEN);
