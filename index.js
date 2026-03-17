@@ -104,17 +104,21 @@ async function gerarEmbed(idDoCanal) {
         .setColor(corEmbed) // Aplica a cor definida acima
         .setFooter({ text: `ID do Evento: ${idDoCanal}` });
 
-    for (const [classe, info] of Object.entries(CONFIG_TORRE)) {
+    const chavesClasses = Object.keys(CONFIG_TORRE);
+
+    for (const classe of chavesClasses) {
+        const info = CONFIG_TORRE[classe];
+        // Busca os inscritos no Map do banco de dados
         const listaIds = dados.inscritos.get(classe) || [];
         const listaNomes = listaIds.length > 0 ? listaIds.join('\n') : '*Vazio*';
 
-        // Se for a Reserva, adicionamos um campo vazio antes para criar uma separação visual
         if (classe === 'Reserva') {
-            embed.addFields({ name: '\u200B', value: '------------------------------------------', inline: false });
+            // Adiciona uma linha de separação antes da reserva
+            embed.addFields({ name: '\u200B', value: '━━━━━━━━━━━━━━━━━━━━━━━━━━', inline: false });
             embed.addFields({ 
                 name: `⏳ FILA DE ESPERA (${listaIds.length}/${info.limite})`, 
                 value: listaNomes, 
-                inline: false // Ocupa a linha toda para destaque
+                inline: false 
             });
         } else {
             embed.addFields({ 
@@ -124,6 +128,7 @@ async function gerarEmbed(idDoCanal) {
             });
         }
     }
+
     return embed;
 }
 
