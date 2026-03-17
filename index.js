@@ -65,14 +65,31 @@ function calcularContagem(dataEvento) {
 
 async function getDadosTorre(idDoCanal) {
     let dados = await Torre.findOne({ eventoId: idDoCanal });
+    
+    // Se não existir, cria o documento com as classes do CONFIG_TORRE
     if (!dados) {
+        const inscritosIniciais = {};
+        Object.keys(CONFIG_TORRE).forEach(classe => {
+            inscritosIniciais[classe] = [];
+        });
+
         dados = await Torre.create({ 
             eventoId: idDoCanal,
-            inscritos: {
-                'HP': [], 'Sniper': [], 'Devo': [], 'Champ CF': [],
-                'Champ Asura': [], 'Professor': [], 'Bragi': [], 'Dancer': [], 'Creator': []
+            inscritos: inscritosIniciais
+        });
+    } else {
+        // SEGURANÇA: Se o documento existe, mas faltam classes (ex: Reserva)
+        let houveMudanca = false;
+        Object.keys(CONFIG_TORRE).forEach(classe => {
+            if (!dados.inscritos.has(classe)) {
+                dados.inscritos.set(classe, []);
+                houveMudanca = true;
             }
         });
+
+        if (houveMudanca) {
+            await dados.save();
+        }
     }
     return dados;
 }
