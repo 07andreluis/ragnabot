@@ -192,6 +192,63 @@ client.on('messageCreate', async message => {
         await message.channel.send({ embeds: [embed], components: gerarBotoes() });
     }
 
+    // COMANDO: !adicionar @usuario Classe
+    if (message.content.startsWith('!adicionar')) {
+        const isThreadOwner = message.channel.isThread() && message.channel.ownerId === message.author.id;
+        const isAdmin = message.member.permissions.has('Administrator');
+
+        // Permissão: Apenas Admin ou Criador do Tópico
+        if (!isAdmin && !isThreadOwner) return;
+
+        const args = message.content.split(' ');
+        const usuarioAlvo = message.mentions.users.first();
+        // Pega o nome da classe ignorando o comando e a menção
+        const classeAlvo = args.slice(2).join(' '); 
+
+        if (!usuarioAlvo || !classeAlvo) {
+            return message.reply('Uso correto: `!adicionar @Nick NomeDaClasse` (Ex: `!adicionar @Fulano Sniper`)');
+        }
+
+        // Verifica se a classe existe no CONFIG_TORRE
+        const classeValida = Object.keys(CONFIG_TORRE).find(c => c.toLowerCase() === classeAlvo.toLowerCase());
+        
+        if (!classeValida) {
+            return message.reply(`Classe \`${classeAlvo}\` não encontrada. Use nomes como HP, Sniper, Reserva, etc.`);
+        }
+
+        const userIdAlvo = `<@${usuarioAlvo.id}>`;
+        const dados = await getDadosTorre(message.channel.id);
+        const info = CONFIG_TORRE[classeValida];
+        const listaDestino = dados.inscritos.get(classeValida) || [];
+
+        // 1. Verifica se o usuário já está em alguma vaga
+        let jaInscrito = false;
+        for (let lista of dados.inscritos.values()) {
+            if (lista.includes(userIdAlvo)) jaInscrito = true;
+        }
+
+        if (jaInscrito) {
+            return message.reply('Este usuário já está inscrito em uma vaga ou na reserva.');
+        }
+
+        // 2. Verifica se a vaga está cheia
+        if (listaDestino.length >= info.limite) {
+            return message.reply(`A classe ${classeValida} já atingiu o limite de ${info.limite} vagas.`);
+        }
+
+        // 3. Adiciona e Salva
+        listaDestino.push(userIdAlvo);
+        dados.inscritos.set(classeValida, listaDestino);
+        await dados.save();
+
+        const embed = await gerarEmbed(message.channel.id);
+        await message.channel.send({ 
+            content: `✅ ${usuarioAlvo} foi adicionado à vaga de **${classeValida}** por ${message.author}.`, 
+            embeds: [embed], 
+            components: gerarBotoes() 
+        });
+    }
+
     // Comando !remover @usuario (Com permissão flexível)
     if (message.content.startsWith('!remover')) {
         const isThread = message.channel.isThread();
