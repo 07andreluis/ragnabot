@@ -415,7 +415,7 @@ client.on('messageCreate', async message => {
             )
             .setFooter({ text: '💡 Dica: Use o RODEX para enviar itens e economizar peso!' });
 
-        await message.channel.send({ embeds: [embedAjuda] }); // Use a variável correta: embedChecklist
+        await message.channel.send({ embeds: [embedChecklist] });
         
         // Apaga o comando !checklist após 5 minutos para não poluir
         setTimeout(() => message.delete().catch(() => {}), 300000);
