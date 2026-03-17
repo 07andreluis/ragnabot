@@ -375,6 +375,52 @@ client.on('messageCreate', async message => {
         // Apaga o comando !ajuda após 30 segundos para manter o chat limpo
         setTimeout(() => message.delete().catch(() => {}), 30000);
     }
+
+    // COMANDO: !checklist
+    if (message.content === '!checklist') {
+        const embedChecklist = new EmbedBuilder()
+            .setTitle('🎒 Checklist de Suprimentos - Torre Sem Fim')
+            .setDescription('Preparem seus estoques! A falta de um item pode causar o wipe do grupo.')
+            .setColor('#e67e22') // Cor laranja para alerta/preparação
+            .addFields(
+                { 
+                    name: '🛡️ Equipamentos Obrigatórios (Todos)', 
+                    value: '• Armaduras: com cartas MARC e PASANA (ED proibida!)\n' +
+                           '• Capa: Nyd com Raydric ou Noxious p/ uso na Valk e Ifrit.\n' +
+                           '• Cabeça: carta Nightmare (ou Pet Nightmare Terror) e carta Giearth.\n' +
+                           '• Acessórios: com carta Alligator p/ uso na Valk e Ifrit.'
+                },
+                { 
+                    name: '🧪 Consumíveis Gerais', 
+                    value: '• 25 Panaceas | 10 Ygg Leafs | 15 Scrolls de Mercenário\n' +
+                           '• Itens de HP/SP e 500k em Zeny para gastos locais.\n' +
+                           '📍 *Scrolls: /navi prontera 42/336*'
+                },
+                { 
+                    name: '🧙 Suportes (Gemas/Água)', 
+                    value: '• **HP:** 250+ Blue Gemstone | 70+ Holy Water\n' +
+                           '• **Prof:** 100+ Blue Gemstone | 100+ Yellow Gemstone'
+                },
+                { 
+                    name: '🏹 Snipers', 
+                    value: '• 15+ Conversores (cada elemento) | 20+ Cursed Water\n' +
+                           '• 2k Flecha Imaterial | 100 Traps'
+                },
+                { 
+                    name: '🛡️ Escudos Especiais (p/ quem usa)', 
+                    value:  '• Escudo com carta Medusa (Exceto Devo e CF)\n' +
+                            '• Escudo com cartas Tatacho ou Hodremlin\n' +
+                            '• Escudo com carta Alice'
+                }
+            )
+            .setFooter({ text: '💡 Dica: Use o RODEX para enviar itens e economizar peso!' });
+
+        await message.channel.send({ embeds: [embedAjuda] }); // Use a variável correta: embedChecklist
+        
+        // Apaga o comando !checklist após 5 minutos para não poluir
+        setTimeout(() => message.delete().catch(() => {}), 300000);
+    }
+
 });
 
 client.on('interactionCreate', async interaction => {
