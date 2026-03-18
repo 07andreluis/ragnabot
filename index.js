@@ -397,7 +397,7 @@ client.on('messageCreate', async message => {
         const chamada = `📢 **NOVA INSTÂNCIA MARCADA!**\n` +
                         `📅 **Data:** ${formatada}\n` +
                         `📍 **Local:** ${message.channel.name}\n\n` +
-                        `⚠️ <@&1100422246998233199>, a data foi definida! Não esqueçam de clicar nos botões acima para garantir sua vaga e classe.`;
+                        `⚠️ <@&1100422246998233199>, a data foi definida! Não esqueçam de clicar nos botões abaixo para garantir sua vaga e classe.`;
 
         await message.channel.send(chamada);
         
