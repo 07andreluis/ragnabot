@@ -372,43 +372,40 @@ client.on('messageCreate', async message => {
         const [dia, mes, ano] = args[1].split('/');
         const [hora, min] = args[2].split(':');
 
-        // Criamos a data forçando o fuso horário de Brasília/Piauí
+        // Criamos a data forçando o fuso horário de Brasília/Piauí (-03:00)
         const dataString = `${ano}-${mes}-${dia}T${hora}:${min}:00-03:00`;
         const novaData = new Date(dataString);
 
-        if (isNaN(novaData)) {
+        // Validação da data
+        if (isNaN(novaData.getTime())) {
             return message.reply('❌ Formato inválido! Use DD/MM/AAAA HH:MM');
         }
 
-        const dados = await getDadosTorre(message.channel.id);
-        dados.dataEvento = novaData;
-        await dados.save();
-
-        message.reply(`✅ Evento marcado! O cronômetro no \`!torre\` agora atualizará em tempo real.`);
-        // Apaga o comando !data para limpar o chat
-        setTimeout(() => message.delete().catch(() => {}), 2000);
-
-        if (dataValida) {
-        dados.dataEvento = dataObjeto;
-        await dados.save();
-
-        // NOVO: Alerta de Convocação Imediata
-        const formatada = dataObjeto.toLocaleString('pt-BR');
+        const canalId = message.channel.id;
+        const dados = await getDadosTorre(canalId);
         
-        // Você pode usar @everyone ou o ID do cargo ex: <@&ID_DO_CARGO>
+        // Atualiza os dados no banco
+        dados.dataEvento = novaData;
+        // IMPORTANTE: Resetamos os alertas enviados para que a nova data dispare os avisos de 24h, 1h, etc.
+        dados.alertasEnviados = []; 
+        await dados.save();
+
+        // Formata a data para a mensagem de exibição
+        const formatada = novaData.toLocaleString('pt-BR', { timeZone: 'America/Fortaleza' });
+
+        // NOVO: Alerta de Convocação Imediata usando o ID do cargo que você forneceu
         const chamada = `📢 **NOVA INSTÂNCIA MARCADA!**\n` +
                         `📅 **Data:** ${formatada}\n` +
                         `📍 **Local:** ${message.channel.name}\n\n` +
-                        `⚠️ <@1100422246998233199>, a data foi definida! Não esqueçam de clicar nos botões acima para garantir sua vaga e classe.`;
+                        `⚠️ <@&1100422246998233199>, a data foi definida! Não esqueçam de clicar nos botões acima para garantir sua vaga e classe.`;
 
         await message.channel.send(chamada);
         
-        // Atualiza o painel principal para mostrar a nova data no embed
+        // Atualiza o painel principal (aquele com os botões) para refletir a nova data
         await enviarPainelAtualizado(message.channel, canalId);
         
-        // Apaga a mensagem do comando para manter o tópico limpo
+        // Apaga o comando !data do usuário para manter o tópico limpo
         await message.delete().catch(() => {});
-        }
     }
 
     // COMANDO: !ajuda
