@@ -402,20 +402,44 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.commandName === 'adicionar') {
-            if (!interaction.member.permissions.has('Administrator')) return interaction.reply({ content: 'Sem permissão.', ephemeral: true });
+            const targetUser = interaction.options.getUser('usuario');
+            const targetId = `<@${targetUser.id}>`;
+            let classeDigitada = interaction.options.getString('classe').trim();
+            let classeFormatada = classeDigitada.charAt(0).toUpperCase() + classeDigitada.slice(1).toLowerCase();
             
-            const target = interaction.options.getUser('usuario');
-            const classe = interaction.options.getString('classe');
+            if (classeDigitada.length <= 2) {
+                classeFormatada = classeDigitada.toUpperCase();
+            }
+            // Casos específicos manuais se necessário (ex: Bragi) APENAS UM EXEMPLO PODE SER DESATIVADO
+            if (classeFormatada === 'Bragi') classeFormatada = 'Bragi'; 
+
             const dados = await Instancia.findOne({ eventoId: canalId });
+            if (!dados) return interaction.reply({ content: '❌ Use /abrir primeiro!', ephemeral: true });
+
+            const infoInstancia = CONFIG_INSTANCIAS[dados.tipoInstancia];
             
-            if (!dados) return interaction.reply({ content: 'Use /abrir primeiro.', ephemeral: true });
+            if (!infoInstancia.classes[classeFormatada]) {
+                return interaction.reply({ 
+                    content: `❌ a classe **${classeFormatada}** não existe na configuração de ${infoInstancia.nome}.`, 
+                    ephemeral: true 
+                });
+            }
+
+            const lista = dados.inscritos.get(classeFormatada) || [];
             
-            let lista = dados.inscritos.get(classe) || [];
-            lista.push(`<@${target.id}>`);
-            dados.inscritos.set(classe, lista);
+            let jaInscrito = false;
+            dados.inscritos.forEach(l => { if (l.includes(targetId)) jaInscrito = true; });
+            if (jaInscrito) return interaction.reply({ content: '❌ Este usuário já está inscrito em uma classe!', ephemeral: true });
+
+            if (lista.length >= infoInstancia.classes[classeFormatada].limite) {
+                return interaction.reply({ content: '❌ Esta classe já está cheia!', ephemeral: true });
+            }
+
+            lista.push(targetId);
+            dados.inscritos.set(classeFormatada, lista);
             await dados.save();
-            
-            await interaction.reply({ content: `✅ ${target.username} adicionado a ${classe}.`, ephemeral: true });
+
+            await interaction.reply({ content: `✅ ${targetUser.username} adicionado como **${classeFormatada}**!`, ephemeral: true });
             await enviarPainelAtualizado(interaction.channel);
         }
 
