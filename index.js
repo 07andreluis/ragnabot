@@ -525,22 +525,23 @@ client.on('interactionCreate', async interaction => {
                 .addFields(
                     { 
                         name: '🚀 Roteiro de Organização (Passo a Passo)', 
-                        value: '1️⃣ **Inicie a Chamada:** Use `/abrir` e escolha o tipo (ET, EC, Celine ou Galho).\n' +
-                            '2️⃣ **Defina o Horário:** Use `/data` preenchendo os campos numéricos para marcar o início.\n' +
-                            '3️⃣ **Aguarde as Inscrições:** O cronômetro e as cores do painel atualizarão sozinhos.\n' +
-                            '4️⃣ **Faxina Automática:** O bot apaga painéis antigos para manter o chat limpo.'
+                        value: '1️⃣ **Crie o Tópico:** Use `/criar` e defina um título para seu tópico (por ex.: Galho - 20/03 - 20h).\n' +
+                            '2️⃣ **Escolha qual ir:** Use `/abrir` e escolha qual instância vai abrir (ET, EC, PT de Galho ou Celine).\n' +
+                            '3️⃣ **Defina o Horário:** Use `/data` preenchendo os campos no formato DD/MM HH:MM para marcar o início.\n' +
+                            '4️⃣ **Aguarde as Inscrições:** O cronômetro e as cores do painel atualizarão sozinhos.'
                     },
                     { 
                         name: '🎮 Comandos de Jogador', 
-                        value: '• **/abrir** - Gera o painel de inscrição se ainda não existir.\n' +
-                            '• **/checklist** - Mostra os itens obrigatórios para a instância atual.\n' +
-                            '• **Botão Classe:** Clique para ocupar uma vaga principal.\n' +
+                        value: '• **/ajuda** - Visualiza todas as informações acerca da utilidade do bot.\n' +
+                            '• **/checklist** - Mostra os itens e equipamentos obrigatórios para a instância atual.\n' +
+                            '• **Botão Classe:** Clique para ocupar uma vaga principal no grupo.\n' +
                             '• **Botão Reserva:** Entre na fila de espera se as vagas encherem.\n' +
-                            '• **Botão Sair:** Remove você da lista automaticamente.'
+                            '• **Botão Sair:** Remove você mesmo da lista automaticamente.'
                     },
                     { 
-                        name: '🛠️ Comandos de Líder (Admin)', 
+                        name: '🛠️ Comandos de Líder ou Moderadores', 
                         value: '• **/data** - Define ou altera o horário do evento.\n' +
+                            '• **/abrir** - Gera o painel de inscrição. Obs.: use sempre que quiser chamar o painel p/ mensagens recentes.\n' +
                             '• **/adicionar** - Selecione o usuário e a classe para colocar alguém direto na vaga.\n' +
                             '• **/remover** - Retira um membro da vaga ocupada através da seleção de usuário.\n' +
                             '• **Botão Resetar:** Limpa todas as vagas da instância atual.'
