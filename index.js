@@ -6,12 +6,9 @@ const http = require('http'); // Adicionado para o Keep-Alive
 // --- SERVIDOR PARA RECEBER O CRON-JOB ---
 http.createServer(async (_, res) => {
     try {
-        // Toda vez que o cron-job acessar a URL, o bot verifica se há alertas para enviar
-        await verificarAlertas(); 
-        
-        // Resposta padrão para o navegador/serviço de cron
+        await verificarAlertas();
         res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8'});
-        res.write("Monitor de Torre: Ativo | Alertas: Processados");
+        res.write("Bot: ONLINE | Alertas: Processados");
         res.end();
     } catch (err) {
         console.error("Erro no processamento do servidor HTTP:", err);
@@ -28,90 +25,120 @@ mongoose.connect(process.env.MONGO_URI)
     .catch(err => console.error('❌ Erro ao conectar ao MongoDB:', err));
 
 // Esquema do Banco de Dados
-const TorreSchema = new mongoose.Schema({
+const InstanciaSchema = new mongoose.Schema({
     eventoId: { type: String, required: true },
+    tipoInstancia: { type: String, default: 'et' },
     dataEvento: { type: Date, default: null },
     alertasEnviados: { type: [String], default: [] },
     ultimaMensagemId: { type: String, default: null },
-    inscritos: {
-        type: Map,
-        of: [String],
-        default: {
-            'HP': [], 'Sniper': [], 'Devo': [], 'Champ CF': [],
-            'Champ Asura': [], 'Professor': [], 'Bragi': [], 'Dancer': [], 'Creator': []
-        }
-    }
+    inscritos: { type: Map, of: [String], default: {} }
 });
 
-const Torre = mongoose.model('Torre', TorreSchema);
+const Instancia = mongoose.model('Instancia', InstanciaSchema);
 
 const client = new Client({ 
     intents: [
         GatewayIntentBits.Guilds, 
-        GatewayIntentBits.GuildMessages, 
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.GuildMessages
     ] 
 });
 
-const CONFIG_TORRE = {
-    'HP': { limite: 2, emoji: '✝️' },
-    'Sniper': { limite: 4, emoji: '🏹' },
-    'Devo': { limite: 1, emoji: '🛡️' },
-    'Champ CF': { limite: 1, emoji: '💪' },
-    'Champ Asura': { limite: 1, emoji: '👊' },
-    'Professor': { limite: 1, emoji: '📚' },
-    'Bragi': { limite: 1, emoji: '🎻' },
-    'Dancer': { limite: 1, emoji: '💃' },
-    'Creator': { limite: 1, emoji: '🧪' },
-    'Reserva': { limite: 12, emoji: '⏳'}
+const CONFIG_INSTANCIAS = {
+    et: {
+        nome: "Endless Tower (ET)",
+        emoji: "🗼",
+        cor: "#3498db",
+        classes: {
+            'Sniper': { limite: 5, emoji: '🏹' },
+            'HP': { limite: 2, emoji: '✝️' },
+            'Bardo': { limite: 1, emoji: '🎻' },
+            'Dancer': { limite: 1, emoji: '💃' },
+            'CF': { limite: 1, emoji: '💪' },
+            'Devo': { limite: 1, emoji: '🛡️' },
+            'Prof': { limite: 1, emoji: '📚' },
+            'Reserva': { limite: 5, emoji: '⏳' }
+        }
+    },
+    ec: {
+        nome: "Endless Cellar (EC)",
+        emoji: "🍷",
+        cor: "#8e44ad",
+        classes: {
+            'Sniper': { limite: 4, emoji: '🏹' },
+            'HP': { limite: 2, emoji: '✝️' },
+            'Bardo': { limite: 1, emoji: '🎻' },
+            'Dancer': { limite: 1, emoji: '💃' },
+            'CF': { limite: 1, emoji: '💪' },
+            'Devo': { limite: 1, emoji: '🛡️' },
+            'Prof': { limite: 1, emoji: '📚' },
+            'Creator': { limite: 1, emoji: '🧪' },
+            'Reserva': { limite: 5, emoji: '⏳' }
+        }
+    },
+    galho: {
+        nome: "PT de Galho Seco",
+        emoji: "🌳",
+        cor: "#2ecc71",
+        classes: {
+            'Sniper': { limite: 1, emoji: '🏹' },
+            'HP': { limite: 3, emoji: '✝️' },
+            'Dancer': { limite: 1, emoji: '💃' },
+            'Bragi': { limite: 1, emoji: '🎻' },
+            'Gospel': { limite: 1, emoji: '📖' },
+            'Devo': { limite: 1, emoji: '🛡️' },
+            'CF': { limite: 1, emoji: '💪' },
+            'Prof': { limite: 1, emoji: '📚' },
+            'Leechers': { limite: 2, emoji: '👶' }
+        }
+    },
+    celine: {
+        nome: "HTF (Celine)",
+        emoji: "🧸",
+        cor: "#e74c3c",
+        classes: {
+            'Sniper': { limite: 1, emoji: '🏹' },
+            'HP': { limite: 1, emoji: '✝️' },
+            'Dancer': { limite: 1, emoji: '💃' },
+            'Bragi': { limite: 1, emoji: '🎻' },
+            'Tanker': { limite: 1, emoji: '🛡️' },
+            'Reserva': { limite: 5, emoji: '⏳' }
+        }
+    }
 };
 
 function calcularContagem(dataEvento) {
     if (!dataEvento) return "📅 **Data ainda não definida.** Use `!data DD/MM/AAAA HH:MM`";
-    
-    // O Discord usa o tempo em segundos, não milissegundos
     const timestampUnix = Math.floor(dataEvento.getTime() / 1000);
-
-    // R: Relativo (ex: "em 2 horas" ou "há 10 minutos")
-    // F: Data Completa (ex: "20 de março de 2026 21:00")
     return `📌 **Início:** <t:${timestampUnix}:F>\n⏳ **Contagem:** <t:${timestampUnix}:R>`;
+}
+
+async function enviarPainelAtualizado(channel) {
+    const dados = await Instancia.findOne({ eventoId: channel.id });
+    if (dados?.ultimaMensagemId) {
+        try { await (await channel.messages.fetch(dados.ultimaMensagemId)).delete(); } catch {}
+    }
+    const msg = await channel.send({ embeds: [await gerarEmbed(channel.id)], components: gerarBotoes(dados.tipoInstancia) });
+    dados.ultimaMensagemId = msg.id;
+    await dados.save();
 }
 
 async function verificarAlertas() {
     const agora = new Date();
-    const eventos = await Torre.find({ dataEvento: { $ne: null } });
-
+    const eventos = await Instancia.find({ dataEvento: { $ne: null } });
     for (const evento of eventos) {
-        // 1. Usar minutos para maior precisão
         const diffMinutos = Math.floor((evento.dataEvento - agora) / (1000 * 60));
-
         const gatilhos = [
             { m: 1440, nome: '24h' },
             { m: 180,  nome: '3h' },
             { m: 60,   nome: '1h' }
         ];
-
         for (const g of gatilhos) {
-        // A CONDIÇÃO: Menor que o gatilho, maior que zero e não enviado ainda
-            // Dentro do loop da função verificarAlertas
             if (diffMinutos <= g.m && diffMinutos > (g.m - 10) && !evento.alertasEnviados.includes(g.nome)) {
-                
                 const canal = await client.channels.fetch(evento.eventoId).catch(() => null);
                 if (canal) {
                     let mencoes = "";
-                    for (const [classe, lista] of evento.inscritos) {
-                        lista.forEach(id => { if (!mencoes.includes(id)) mencoes += `${id} `; });
-                    }
-
-                    // TEXTO LIMPO E DIRETO:
-                    const mensagemAlerta = `🔔 **ALERTA DE ${g.nome.toUpperCase()}!**\n` +
-                                        `📍 A torre começará em breve!\n` +
-                                        `👥 Participantes: ${mencoes}\n\n` +
-                                        `💡 *Dica: Digite **!checklist** para ver os itens e equipamentos obrigatórios.*`;
-
-                    await canal.send(mensagemAlerta);
-
-                    // Salva que o alerta foi enviado
+                    evento.inscritos.forEach(lista => lista.forEach(id => { if (!mencoes.includes(id)) mencoes += `${id} `; }));
+                    await canal.send(`🔔 **ALERTA DE ${g.nome}!**\n📍 A **${CONFIG_INSTANCIAS[evento.tipoInstancia].nome}** começará em breve!\n👥 Participantes: ${mencoes}!\n💡 *Dica: Digite **/checklist ${CONFIG_INSTANCIAS[evento.tipoInstancia].nome}** para ver os itens e equipamentos obrigatórios.*`);
                     evento.alertasEnviados.push(g.nome);
                     await evento.save();
                 }
@@ -120,435 +147,157 @@ async function verificarAlertas() {
     }
 }
 
-async function getDadosTorre(idDoCanal) {
-    let dados = await Torre.findOne({ eventoId: idDoCanal });
+async function getDadosInstancia(idDoCanal) {
+    let dados = await Instancia.findOne({ eventoId: idDoCanal });
     
-    // Se não existir, cria o documento com as classes do CONFIG_TORRE
     if (!dados) {
-        const inscritosIniciais = {};
-        Object.keys(CONFIG_TORRE).forEach(classe => {
-            inscritosIniciais[classe] = [];
-        });
-
-        dados = await Torre.create({ 
-            eventoId: idDoCanal,
-            inscritos: inscritosIniciais
-        });
-    } else {
-        // SEGURANÇA: Se o documento existe, mas faltam classes (ex: Reserva)
-        let houveMudanca = false;
-        Object.keys(CONFIG_TORRE).forEach(classe => {
-            if (!dados.inscritos.has(classe)) {
-                dados.inscritos.set(classe, []);
-                houveMudanca = true;
-            }
-        });
-
-        if (houveMudanca) {
-            await dados.save();
-        }
+        return null; 
     }
     return dados;
 }
 
 async function gerarEmbed(idDoCanal) {
-    const dados = await getDadosTorre(idDoCanal);
+    const dados = await getDadosInstancia(idDoCanal);
+    if (!dados) return new EmbedBuilder().setTitle("❌ Instância não configurada. Use /abrir");
+
+    const infoInstancia = CONFIG_INSTANCIAS[dados.tipoInstancia];
     const contagemTexto = calcularContagem(dados.dataEvento);
     
-    // Lógica de Cores Dinâmicas
-    let corEmbed = '#2b2d31'; // Cor padrão (Cinza escuro)
-    
+    let corEmbed = infoInstancia.cor; 
     if (dados.dataEvento) {
         const agora = new Date();
         const diff = dados.dataEvento - agora;
-        const duasHoras = 2 * 60 * 60 * 1000; // 2 horas em milissegundos
-
-        if (diff <= 0) {
-            corEmbed = '#ff0000'; // Vermelho (Evento já começou/atrasado)
-        } else if (diff <= duasHoras) {
-            corEmbed = '#f1c40f'; // Amarelo (Falta menos de 2h - Atenção!)
-        } else {
-            corEmbed = '#3498db'; // Azul (Tudo sob controle)
-        }
+        if (diff <= 0) corEmbed = '#ff0000';
+        else if (diff <= 2 * 60 * 60 * 1000) corEmbed = '#f1c40f';
     }
 
     const embed = new EmbedBuilder()
-        .setTitle('🏰 Torre Sem Fim - Inscrição')
-        .setDescription(`${contagemTexto}\n\nSelecione sua classe abaixo. Esta lista é exclusiva para este tópico!`)
-        .setColor(corEmbed) // Aplica a cor definida acima
-        .setFooter({ text: `ID do Evento: ${idDoCanal}` });
+        .setTitle(`${infoInstancia.emoji} ${infoInstancia.nome} - Inscrição`)
+        .setDescription(`${contagemTexto}\n\nSelecione sua classe abaixo.`)
+        .setColor(corEmbed)
+        .setFooter({ text: `ID: ${idDoCanal} | Tipo: ${dados.tipoInstancia.toUpperCase()}` });
 
-    const chavesClasses = Object.keys(CONFIG_TORRE);
-
-    for (const classe of chavesClasses) {
-        const info = CONFIG_TORRE[classe];
-        const listaIds = (dados.inscritos && dados.inscritos.get(classe)) || [];
+    for (const [classe, info] of Object.entries(infoInstancia.classes)) {
+        const listaIds = dados.inscritos.get(classe) || [];
         const listaNomes = listaIds.length > 0 ? listaIds.join('\n') : '*Vazio*';
-
-        if (classe === 'Reserva') {
-            embed.addFields({ name: '\u200B', value: '━━━━━━━━━━━━━━━━━━━━━━━━━━', inline: false });
-            embed.addFields({ 
-                name: `⏳ FILA DE ESPERA (${listaIds.length}/${info.limite})`, 
-                value: listaNomes, 
-                inline: false 
-            });
-        } else {
-            embed.addFields({ 
-                name: `${info.emoji} ${classe} (${listaIds.length}/${info.limite})`, 
-                value: listaNomes, 
-                inline: true 
-            });
-        }
+        const isReserva = classe === 'Reserva';
+        
+        embed.addFields({ 
+            name: `${isReserva ? '⏳' : info.emoji} ${classe} (${listaIds.length}/${info.limite})`, 
+            value: listaNomes, 
+            inline: !isReserva 
+        });
+        if (isReserva) embed.addFields({ name: '\u200B', value: '━━━━━━━━━━━━', inline: false });
     }
-
     return embed;
 }
 
-function gerarBotoes() {
+function gerarBotoes(tipo) {
     const rows = [];
-    const classes = Object.keys(CONFIG_TORRE);
-    for (let i = 0; i < classes.length; i += 4) {
+    const classesInfo = CONFIG_INSTANCIAS[tipo].classes;
+    const nomesClasses = Object.keys(classesInfo);
+
+    for (let i = 0; i < nomesClasses.length; i += 4) {
         const row = new ActionRowBuilder();
-        classes.slice(i, i + 4).forEach(classe => {
+        nomesClasses.slice(i, i + 4).forEach(classe => {
             row.addComponents(
                 new ButtonBuilder()
                     .setCustomId(`insc_${classe}`)
                     .setLabel(classe)
                     .setStyle(ButtonStyle.Secondary)
-                    .setEmoji(CONFIG_TORRE[classe].emoji)
+                    .setEmoji(classesInfo[classe].emoji)
             );
         });
         rows.push(row);
     }
+    
     rows.push(new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('sair').setLabel('Sair da Lista').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('reset').setLabel('Resetar Torre (Admin)').setStyle(ButtonStyle.Primary)
+        new ButtonBuilder().setCustomId('reset').setLabel('Resetar (Admin)').setStyle(ButtonStyle.Primary)
     ));
     return rows;
 }
 
-client.once('ready', () => {
-    console.log(`🚀 Bot online como ${client.user.tag}! Digite !torre no Discord.`);
-});
+client.once('ready', async () => {
+    console.log(`🚀 Bot online como ${client.user.tag}`);
 
-// --- FUNÇÃO DE LIMPEZA ---
-async function limparEventosAntigos() {
-    const umDiaAtras = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    await Torre.deleteMany({
-        dataEvento: { $lt: umDiaAtras, $ne: null }
-    });
-}
-
-async function enviarPainelAtualizado(channel, canalId) {
-    const dados = await getDadosTorre(canalId);
-
-    // 1. Tenta apagar a mensagem anterior se ela existir
-    if (dados.ultimaMensagemId) {
-        try {
-            const msgAntiga = await channel.messages.fetch(dados.ultimaMensagemId);
-            if (msgAntiga) await msgAntiga.delete();
-        } catch (err) {
-            // Ignora erro se a mensagem já foi apagada manualmente
+    const comandos = [
+        {
+            name: 'abrir',
+            description: 'Inicia o painel de uma instância neste tópico',
+            options: [{
+                name: 'instancia',
+                type: 3, 
+                description: 'Qual instância deseja abrir?',
+                required: true,
+                choices: Object.keys(CONFIG_INSTANCIAS).map(k => ({name: CONFIG_INSTANCIAS[k].nome, value: k }))
+            }]
+        },
+        {
+            name: 'data',
+            description: 'Define a data e hora do evento',
+            options: ['dia', 'mes', 'ano', 'hora', 'minuto'].map(n => ({name: n, type: 4, required: true}))
         }
-    }
+    ];
 
-    // 2. Envia o novo painel
-    const embed = await gerarEmbed(canalId);
-    const novaMsg = await channel.send({ 
-        embeds: [embed], 
-        components: gerarBotoes() 
-    });
-
-    // 3. Salva o ID da nova mensagem no banco
-    dados.ultimaMensagemId = novaMsg.id;
-    await dados.save();
-}
-
-client.on('messageCreate', async message => {
-    if (message.author.bot) return;
-
-    // Comando !torre com Faxina Automática
-    if (message.content === '!torre') {
-        await limparEventosAntigos();
-        await enviarPainelAtualizado(message.channel, message.channel.id);
-        await message.delete().catch(() => {}); // Apaga o "!torre" do usuário
-    }
-
-    // COMANDO: !adicionar @usuario Classe
-    if (message.content.startsWith('!adicionar')) {
-        const isThreadOwner = message.channel.isThread() && message.channel.ownerId === message.author.id;
-        const isAdmin = message.member.permissions.has('Administrator');
-
-        // Permissão: Apenas Admin ou Criador do Tópico
-        if (!isAdmin && !isThreadOwner) return;
-
-        const args = message.content.split(' ');
-        const usuarioAlvo = message.mentions.users.first();
-        // Pega o nome da classe ignorando o comando e a menção
-        const classeAlvo = args.slice(2).join(' '); 
-
-        if (!usuarioAlvo || !classeAlvo) {
-            return message.reply('Uso correto: `!adicionar @Nick NomeDaClasse` (Ex: `!adicionar @Fulano Sniper`)');
-        }
-
-        // Verifica se a classe existe no CONFIG_TORRE
-        const classeValida = Object.keys(CONFIG_TORRE).find(c => c.toLowerCase() === classeAlvo.toLowerCase());
-        
-        if (!classeValida) {
-            return message.reply(`Classe \`${classeAlvo}\` não encontrada. Use nomes como HP, Sniper, Reserva, etc.`);
-        }
-
-        const userIdAlvo = `<@${usuarioAlvo.id}>`;
-        const dados = await getDadosTorre(message.channel.id);
-        const info = CONFIG_TORRE[classeValida];
-        const listaDestino = dados.inscritos.get(classeValida) || [];
-
-        // 1. Verifica se o usuário já está em alguma vaga
-        let jaInscrito = false;
-        for (let lista of dados.inscritos.values()) {
-            if (lista.includes(userIdAlvo)) jaInscrito = true;
-        }
-
-        if (jaInscrito) {
-            return message.reply('Este usuário já está inscrito em uma vaga ou na reserva.');
-        }
-
-        // 2. Verifica se a vaga está cheia
-        if (listaDestino.length >= info.limite) {
-            return message.reply(`A classe ${classeValida} já atingiu o limite de ${info.limite} vagas.`);
-        }
-
-        // 3. Adiciona e Salva
-        listaDestino.push(userIdAlvo);
-        dados.inscritos.set(classeValida, listaDestino);
-        await dados.save();
-        await enviarPainelAtualizado(message.channel, message.channel.id);
-        await message.delete().catch(() => {});
-    }
-
-    // Comando !remover @usuario (Com permissão flexível)
-    if (message.content.startsWith('!remover')) {
-        const isThread = message.channel.isThread();
-        const isThreadOwner = isThread && message.channel.ownerId === message.author.id;
-        const isAdmin = message.member.permissions.has('Administrator');
-
-        // Se não for Admin E não for o dono do tópico, bloqueia
-        if (!isAdmin && !isThreadOwner) {
-            setTimeout(() => message.delete().catch(() => {}), 1000);
-            return message.reply({ 
-                content: 'Apenas administradores ou o criador deste tópico podem remover membros.', 
-                flags: [64] 
-            });
-        }
-
-        const usuarioParaRemover = message.mentions.users.first();
-        if (!usuarioParaRemover) return message.reply('Marque o usuário: `!remover @Nick`');
-
-        const userIdRemover = `<@${usuarioParaRemover.id}>`;
-        const dados = await getDadosTorre(message.channel.id);
-        let removido = false;
-
-        for (let [classe, lista] of dados.inscritos) {
-            if (lista.includes(userIdRemover)) {
-                dados.inscritos.set(classe, lista.filter(id => id !== userIdRemover));
-                removido = true;
-            }
-        }
-
-        if (removido) {
-            await dados.save();
-            await enviarPainelAtualizado(message.channel, message.channel.id);
-            await message.delete().catch(() => {});
-        } else {
-            message.reply('Este usuário não está na lista.');
-        }
-    }
-    
-    // COMANDO: !data DD/MM/AAAA HH:MM
-    if (message.content.startsWith('!data')) {
-        const args = message.content.split(' ');
-        if (args.length < 3) return message.reply('Use: `!data DD/MM/AAAA HH:MM`');
-
-        const [dia, mes, ano] = args[1].split('/');
-        const [hora, min] = args[2].split(':');
-
-        // Criamos a data forçando o fuso horário de Brasília/Piauí (-03:00)
-        const dataString = `${ano}-${mes}-${dia}T${hora}:${min}:00-03:00`;
-        const novaData = new Date(dataString);
-
-        // Validação da data
-        if (isNaN(novaData.getTime())) {
-            return message.reply('❌ Formato inválido! Use DD/MM/AAAA HH:MM');
-        }
-
-        const canalId = message.channel.id;
-        const dados = await getDadosTorre(canalId);
-        
-        // Atualiza os dados no banco
-        dados.dataEvento = novaData;
-        // IMPORTANTE: Resetamos os alertas enviados para que a nova data dispare os avisos de 24h, 1h, etc.
-        dados.alertasEnviados = []; 
-        await dados.save();
-
-        // Formata a data para a mensagem de exibição
-        const formatada = novaData.toLocaleString('pt-BR', { timeZone: 'America/Fortaleza' });
-
-        // NOVO: Alerta de Convocação Imediata usando o ID do cargo que você forneceu
-        const chamada = `📢 **NOVA INSTÂNCIA MARCADA!**\n` +
-                        `📅 **Data:** ${formatada}\n` +
-                        `📍 **Local:** ${message.channel.name}\n\n` +
-                        `⚠️ <@&1100422246998233199>, a data foi definida! Não esqueçam de clicar nos botões abaixo para garantir sua vaga e classe.`;
-
-        await message.channel.send(chamada);
-        
-        // Atualiza o painel principal (aquele com os botões) para refletir a nova data
-        await enviarPainelAtualizado(message.channel, canalId);
-        
-        // Apaga o comando !data do usuário para manter o tópico limpo
-        await message.delete().catch(() => {});
-    }
-
-    // COMANDO: !ajuda
-    if (message.content === '!ajuda') {
-        const embedAjuda = new EmbedBuilder()
-            .setTitle('📖 Guia de Operação - Organizador de Instâncias')
-            .setDescription('Siga o roteiro abaixo para organizar sua instância com eficiência:')
-            .setColor('#ffffff')
-            .addFields(
-                { 
-                    name: '🚀 Roteiro de Organização (Passo a Passo)', 
-                    value: '1️⃣ **Defina o Horário:** Use `!data DD/MM/AAAA HH:MM` para marcar o início. (Horário de Brasília)\n' +
-                           '2️⃣ **Inicie a Chamada:** Use `!torre` para gerar o painel de classes.\n' +
-                           '3️⃣ **Aguarde as Inscrições:** O cronômetro atualizará sozinho conforme o tempo passa.\n' +
-                           '4️⃣ **Faxina Automática:** O bot apaga painéis antigos para manter o chat limpo.'
-                },
-                { 
-                    name: '🎮 Comandos de Jogador', 
-                    value: '• `!torre` - Mostra o painel de inscrição atual.\n' +
-                           '• **Botão Reserva:** Entre na fila de espera se as vagas encherem.\n' +
-                           '• **Botão Sair:** Remove você da lista automaticamente.'
-                },
-                { 
-                    name: '🛠️ Comandos de Líder (Dono do Tópico ou Admin)', 
-                    value:  '• `!data` - Define/Altera o horário do evento.\n' +
-                            '• `!adicionar @Nick Classe` - Coloca alguém direto em uma vaga.\n' +
-                            '• `!remover @Nick` - Retira um membro da vaga ocupada.\n' +
-                            '• **Botão Resetar:** Limpa todas as vagas daquela torre.'
-                },
-                { 
-                    name: '💡 Dicas de Ouro', 
-                    value:  '• Digite a classe como escrito no botão (ex: `!adicionar @Nick Sniper`).\n' +
-                            '• Crie um **Tópico Novo** para cada torre (assim as listas não se misturam).\n' +
-                            '• As cores do painel mudam: 🔵 (Longe), 🟡 (Faltam 2h), 🔴 (Atrasado).\n' +
-                            '• O sistema limpa automaticamente listas de eventos passados.'
-                }
-            )
-            .setFooter({ text: 'Sistema de Apoio ao Clã criado por André Luís' });
-
-        await message.channel.send({ embeds: [embedAjuda] });
-    
-        // Apaga o comando !ajuda após 30 segundos para manter o chat limpo
-        setTimeout(() => message.delete().catch(() => {}), 30000);
-    }
-
-    // COMANDO: !checklist
-    if (message.content === '!checklist') {
-        const embedChecklist = new EmbedBuilder()
-            .setTitle('🎒 Checklist de Suprimentos - Torre Sem Fim')
-            .setDescription('Preparem seus estoques! A falta de um item pode causar o wipe do grupo.')
-            .setColor('#e67e22') // Cor laranja para alerta/preparação
-            .addFields(
-                { 
-                    name: '🛡️ Equipamentos Obrigatórios (Todos)', 
-                    value: '• Armaduras: com cartas MARC e PASANA (ED proibida!)\n' +
-                           '• Capa: Nyd com Raydric ou Noxious p/ uso na Valk e Ifrit.\n' +
-                           '• Cabeça: com carta Nightmare (ou Pet Nightmare Terror) e carta Giearth.\n' +
-                           '• Acessórios: com carta Alligator p/ uso na Valk e Ifrit.'
-                },
-                { 
-                    name: '🧪 Consumíveis Gerais', 
-                    value: '• 25 Panaceas | 10 Ygg Leafs | 15 Scrolls de Mercenário (level 1 já serve)\n' +
-                           '• Itens de HP/SP e 500k em Zeny para gastos locais.\n' +
-                           '📍 *Scrolls: /navi prontera 42/336*'
-                },
-                { 
-                    name: '🧙 Suportes (Gemas/Água)', 
-                    value: '• **HP:** 250+ Blue Gemstone | 70+ Holy Water\n' +
-                           '• **Prof:** 100+ Blue Gemstone | 100+ Yellow Gemstone'
-                },
-                { 
-                    name: '🏹 Snipers', 
-                    value: '• 15+ Conversores (cada elemento) | 20+ Cursed Water\n' +
-                           '• 2k Flecha Imaterial | 100 Traps'
-                },
-                { 
-                    name: '🛡️ Escudos Especiais (p/ quem usa)', 
-                    value:  '• Escudo com carta Medusa (Exceto Devo e CF)\n' +
-                            '• Escudo com cartas Tatacho ou Hodremlin\n' +
-                            '• Escudo com carta Alice'
-                }
-            )
-            .setFooter({ text: '💡 Dica: Use o RODEX para enviar itens e economizar peso!' });
-
-        await message.channel.send({ embeds: [embedChecklist] });
-        
-        // Apaga o comando !checklist após 5 minutos para não poluir
-        setTimeout(() => message.delete().catch(() => {}), 300000);
-    }
-
+    await client.application.commands.set(comandos);
+    console.log('✅ Slash Commands registrados!');
 });
 
 client.on('interactionCreate', async interaction => {
-    if (!interaction.isButton()) return;
-    const userId = `<@${interaction.user.id}>`;
-    
-    // Pegamos o ID do canal onde o botão foi clicado
     const canalId = interaction.channel.id;
-    const dados = await getDadosTorre(canalId);
+    const userId = `<@${interaction.user.id}>`;
 
-    if (interaction.customId === 'sair') {
-        for (let [classe, lista] of dados.inscritos) {
-            dados.inscritos.set(classe, lista.filter(id => id !== userId));
+    if (interaction.isChatInputCommand()) {
+        if (interaction.commandName === 'abrir') {
+            const tipo = interaction.options.getString('instancia');
+            // Ajuste: Limpa inscritos ao abrir novo painel para evitar lixo de instâncias anteriores
+            await Instancia.findOneAndUpdate({ eventoId: canalId }, { tipoInstancia: tipo, inscritos: new Map(), dataEvento: null, alertasEnviados: [] }, { upsert: true });
+            await interaction.reply({ content: '✅ Painel gerado!', ephemeral: true });
+            await enviarPainelAtualizado(interaction.channel);
+        }
+
+        if (interaction.commandName === 'data') {
+            const [d, m, a, h, min] = ['dia','mes','ano','hora','minuto'].map(n => interaction.options.getInteger(n));
+            const novaData = new Date(`${a}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}T${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}:00-03:00`);
+            
+            const dados = await Instancia.findOne({ eventoId: canalId });
+            if (!dados) return interaction.reply({ content: '❌ Use /abrir primeiro!', ephemeral: true });
+
+            dados.dataEvento = novaData;
+            dados.alertasEnviados = [];
+            await dados.save();
+
+            await interaction.channel.send(`📢 **${CONFIG_INSTANCIAS[dados.tipoInstancia].nome} MARCADA!**\n📅 **Data:** ${novaData.toLocaleString('pt-BR', { timeZone: 'America/Fortaleza' })}\n⚠️ <@&1100422246998233199>, inscrevam-se!`);
+            await interaction.reply({ content: '✅ Data definida!', ephemeral: true });
+            await enviarPainelAtualizado(interaction.channel);
+        }
+    }
+
+    if (interaction.isButton()) {
+        const dados = await Instancia.findOne({ eventoId: canalId });
+        if (!dados) return;
+
+        if (interaction.customId === 'sair') {
+            dados.inscritos.forEach((l, k) => dados.inscritos.set(k, l.filter(id => id !== userId)));
+        } else if (interaction.customId === 'reset') {
+            if (!interaction.member.permissions.has('Administrator')) return interaction.reply({ content: 'Apenas administradores podem resetar.', ephemeral: true });
+            dados.inscritos = new Map();
+        } else {
+            const classe = interaction.customId.replace('insc_', '');
+            const lista = dados.inscritos.get(classe) || [];
+            let jaInscrito = false;
+            dados.inscritos.forEach(l => { if (l.includes(userId)) jaInscrito = true; });
+
+            if (jaInscrito) return interaction.reply({ content: 'Você já está em uma classe!', ephemeral: true });
+            if (lista.length >= CONFIG_INSTANCIAS[dados.tipoInstancia].classes[classe].limite) return interaction.reply({ content: 'Esta classe está cheia!', ephemeral: true });
+
+            lista.push(userId);
+            dados.inscritos.set(classe, lista);
         }
         await dados.save();
-        return interaction.update({ embeds: [await gerarEmbed(canalId)] });
+        await interaction.update({ embeds: [await gerarEmbed(canalId)] });
     }
-
-    if (interaction.customId === 'reset') {
-        if (!interaction.member.permissions.has('Administrator')) {
-            return interaction.reply({ content: 'Apenas administradores podem resetar a lista.', ephemeral: true });
-        }
-        for (let classe of dados.inscritos.keys()) {
-            dados.inscritos.set(classe, []);
-        }
-        await dados.save();
-        return interaction.update({ embeds: [await gerarEmbed(canalId)] });
-    }
-
-    const classeEscolhida = interaction.customId.replace('insc_', '');
-    const info = CONFIG_TORRE[classeEscolhida];
-    
-    if (!dados.inscritos.has(classeEscolhida)) {
-        dados.inscritos.set(classeEscolhida, []);
-    }
-    
-    const listaAtual = dados.inscritos.get(classeEscolhida);
-
-    let jaInscrito = false;
-    for (let lista of dados.inscritos.values()) {
-        if (Array.isArray(lista) && lista.includes(userId)) jaInscrito = true;
-    }
-
-    if (jaInscrito) return interaction.reply({ content: 'Você já está em uma classe neste tópico!', ephemeral: true });
-    
-    if (listaAtual.length >= info.limite) return interaction.reply({ content: 'Esta classe já está cheia!', ephemeral: true });
-
-    listaAtual.push(userId);
-    dados.inscritos.set(classeEscolhida, listaAtual);
-    
-    // Salva e atualiza
-    await dados.save();
-    await interaction.update({ embeds: [await gerarEmbed(canalId)] });
 });
 
 client.login(process.env.DISCORD_TOKEN);
