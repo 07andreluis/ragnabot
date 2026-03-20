@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const mongoose = require('mongoose');
-const http = require('http'); // Adicionado para o Keep-Alive
+const http = require('http');
 
 // --- SERVIDOR PARA RECEBER O CRON-JOB ---
 http.createServer(async (_, res) => {
@@ -89,7 +89,8 @@ const CONFIG_INSTANCIAS = {
             'Devo': { limite: 1, emoji: '🛡️' },
             'CF': { limite: 1, emoji: '💪' },
             'Prof': { limite: 1, emoji: '📚' },
-            'Leechers': { limite: 2, emoji: '👶' }
+            'Leechers': { limite: 2, emoji: '👶' },
+            'Reserva': { limite: 5, emoji: '⏳' }
         }
     },
     celine: {
@@ -139,7 +140,7 @@ async function verificarAlertas() {
                 if (canal) {
                     let mencoes = "";
                     evento.inscritos.forEach(lista => lista.forEach(id => { if (!mencoes.includes(id)) mencoes += `${id} `; }));
-                    await canal.send(`🔔 **ALERTA DE ${g.nome}!**\n📍 A **${CONFIG_INSTANCIAS[evento.tipoInstancia].nome}** começará em breve!\n👥 Participantes: ${mencoes}!\n💡 *Dica: Digite **/checklist ${CONFIG_INSTANCIAS[evento.tipoInstancia].nome}** para ver os itens e equipamentos obrigatórios.*`);
+                    await canal.send(`🔔 **ALERTA DE ${g.nome}!**\n📍 A **${CONFIG_INSTANCIAS[evento.tipoInstancia].nome}** começará em breve!\n👥 Participantes: ${mencoes}!\n💡 *Dica: Digite **/checklist** para ver os itens e equipamentos obrigatórios.*`);
                     evento.alertasEnviados.push(g.nome);
                     await evento.save();
                 }
@@ -255,7 +256,7 @@ client.once('ready', async () => {
         },
         {
             name: 'adicionar',
-            description: 'Adiciona manualmente um usuário a uma classe (Admin)',
+            description: 'Adiciona manualmente um usuário a uma classe',
             options: [
                 { name: 'usuario', type: 6, description: 'Usuário a ser adicionado', required: true },
                 { name: 'classe', type: 3, description: 'Nome da classe', required: true }
@@ -263,7 +264,7 @@ client.once('ready', async () => {
         },
         {
             name: 'remover',
-            description: 'Remove um usuário de uma classe (Admin)',
+            description: 'Remove um usuário de uma classe',
             options: [
                 { name: 'usuario', type: 6, description: 'Usuário a ser removido', required: true }
             ]
@@ -282,14 +283,11 @@ client.on('interactionCreate', async interaction => {
         if (interaction.commandName === 'abrir') {
             const tipoEscolhido = interaction.options.getString('instancia');
             
-            // Busca se já existe uma instância configurada neste tópico
             let dados = await Instancia.findOne({ eventoId: canalId });
 
             if (dados && dados.tipoInstancia === tipoEscolhido) {
-                // SE JÁ FOR A MESMA: apenas avisa e traz o painel para baixo (mantém inscritos e data)
                 await interaction.reply({ content: `🔄 Trazendo o painel de ${CONFIG_INSTANCIAS[tipoEscolhido].nome} para cá...`, ephemeral: true });
             } else {
-                // SE FOR UMA NOVA: reseta tudo para evitar lixo de instâncias passadas
                 await Instancia.findOneAndUpdate(
                     { eventoId: canalId }, 
                     { 
@@ -303,7 +301,6 @@ client.on('interactionCreate', async interaction => {
                 await interaction.reply({ content: `✅ Nova instância de ${CONFIG_INSTANCIAS[tipoEscolhido].nome} iniciada!`, ephemeral: true });
             }
 
-            // Move o painel para a mensagem mais recente do chat
             await enviarPainelAtualizado(interaction.channel);
         }
 
@@ -384,7 +381,7 @@ client.on('interactionCreate', async interaction => {
                     .addFields(
                         { name: '🛡️ Essenciais para TODOS', value: '• 20+ Panaceas | 10 Folhas de Ygg\n• 5 Fireproof Potion | Itens de HP/SP' },
                         { name: '🎭 Suportes (HP/Bragi/Dancer)', value: '• Armadura com Pasana | Escudo com Medusa\n• Elmo com Nightmare (ou Pet Nightmare Terror)\n• **HP:** 150+ Blue Gemstone | 10+ Holy Water' },
-                        { name: '🏹 Sniper', value: '• 1k Immaterial Arrow | Elmo com Nightmare\n• Sniper Suit com Pasana | Arco MVP Ghost (2 AK / 2 Maoguai)' }
+                        { name: '🏹 Sniper', value: '• 1k Immaterial Arrow | Elmo com Nightmare\n• Sniper Suit com Pasana | Arco MVP Ghost (2 AK / 2 Mao Guai)' }
                     );
             }
 
@@ -417,7 +414,6 @@ client.on('interactionCreate', async interaction => {
             if (!dados) return interaction.reply({ content: '❌ Use /abrir primeiro!', ephemeral: true });
 
             const infoInstancia = CONFIG_INSTANCIAS[dados.tipoInstancia];
-            
             if (!infoInstancia.classes[classeFormatada]) {
                 return interaction.reply({ 
                     content: `❌ a classe **${classeFormatada}** não existe na configuração de ${infoInstancia.nome}.`, 
@@ -438,12 +434,36 @@ client.on('interactionCreate', async interaction => {
             lista.push(targetId);
             dados.inscritos.set(classeFormatada, lista);
             await dados.save();
-
             await interaction.reply({ content: `✅ ${targetUser.username} adicionado como **${classeFormatada}**!`, ephemeral: true });
             await enviarPainelAtualizado(interaction.channel);
         }
 
-        // --- COMANDO /AJUDA ---
+        if (interaction.commandName === 'remover') {
+            const targetUser = interaction.options.getUser('usuario');
+            const targetId = `<@${targetUser.id}>`;
+            const canalId = interaction.channel.id;
+
+            const dados = await Instancia.findOne({ eventoId: canalId });
+            if (!dados) return interaction.reply({ content: '❌ Nenhuma instância ativa neste tópico.', ephemeral: true });
+
+            let removido = false;
+            dados.inscritos.forEach((lista, classe) => {
+                if (lista.includes(targetId)) {
+                    const novaLista = lista.filter(id => id !== targetId);
+                    dados.inscritos.set(classe, novaLista);
+                    removido = true;
+                }
+            });
+
+            if (!removido) {
+                return interaction.reply({ content: `❌ O usuário ${targetUser.username} não foi encontrado em nenhuma vaga.`, ephemeral: true });
+            }
+
+            await dados.save();
+            await interaction.reply({ content: `✅ ${targetUser.username} foi removido da instância com sucesso!`, ephemeral: true });
+            await enviarPainelAtualizado(interaction.channel);
+        }
+
         if (interaction.commandName === 'ajuda') {
             const embedAjuda = new EmbedBuilder()
                 .setTitle('📖 Guia de Operação - Organizador de Instâncias')
