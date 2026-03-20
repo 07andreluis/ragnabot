@@ -280,10 +280,30 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.isChatInputCommand()) {
         if (interaction.commandName === 'abrir') {
-            const tipo = interaction.options.getString('instancia');
-            // Ajuste: Limpa inscritos ao abrir novo painel para evitar lixo de instâncias anteriores
-            await Instancia.findOneAndUpdate({ eventoId: canalId }, { tipoInstancia: tipo, inscritos: new Map(), dataEvento: null, alertasEnviados: [] }, { upsert: true });
-            await interaction.reply({ content: '✅ Painel gerado!', ephemeral: true });
+            const tipoEscolhido = interaction.options.getString('instancia');
+            
+            // Busca se já existe uma instância configurada neste tópico
+            let dados = await Instancia.findOne({ eventoId: canalId });
+
+            if (dados && dados.tipoInstancia === tipoEscolhido) {
+                // SE JÁ FOR A MESMA: apenas avisa e traz o painel para baixo (mantém inscritos e data)
+                await interaction.reply({ content: `🔄 Trazendo o painel de ${CONFIG_INSTANCIAS[tipoEscolhido].nome} para cá...`, ephemeral: true });
+            } else {
+                // SE FOR UMA NOVA: reseta tudo para evitar lixo de instâncias passadas
+                await Instancia.findOneAndUpdate(
+                    { eventoId: canalId }, 
+                    { 
+                        tipoInstancia: tipoEscolhido, 
+                        inscritos: new Map(), 
+                        dataEvento: null, 
+                        alertasEnviados: [] 
+                    }, 
+                    { upsert: true }
+                );
+                await interaction.reply({ content: `✅ Nova instância de ${CONFIG_INSTANCIAS[tipoEscolhido].nome} iniciada!`, ephemeral: true });
+            }
+
+            // Move o painel para a mensagem mais recente do chat
             await enviarPainelAtualizado(interaction.channel);
         }
 
