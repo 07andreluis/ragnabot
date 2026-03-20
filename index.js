@@ -109,7 +109,7 @@ const CONFIG_INSTANCIAS = {
 };
 
 function calcularContagem(dataEvento) {
-    if (!dataEvento) return "📅 **Data ainda não definida.** Use `!data DD/MM/AAAA HH:MM`";
+    if (!dataEvento) return "📅 **Data ainda não definida.** Use `/data DD/MM HH:MM`";
     const timestampUnix = Math.floor(dataEvento.getTime() / 1000);
     return `📌 **Início:** <t:${timestampUnix}:F>\n⏳ **Contagem:** <t:${timestampUnix}:R>`;
 }
@@ -356,7 +356,7 @@ client.on('interactionCreate', async interaction => {
             const msgAnuncio = await interaction.channel.send(
                 `📢 **A instância ${CONFIG_INSTANCIAS[dados.tipoInstancia].nome} foi MARCADA!**\n` +
                 `📅 **Início:** <t:${timestamp}:F>\n` +
-                `⚠️ <@&1100422246998233199>, inscrevam-se!`
+                `⚠️ <@&1297951167669862521><@&1100422246998233199>, inscrevam-se!`
             );
 
             dados.ultimaDataMsgId = msgAnuncio.id;
