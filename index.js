@@ -236,7 +236,13 @@ client.once('ready', async () => {
         {
             name: 'data',
             description: 'Define a data e hora do evento',
-            options: ['dia', 'mes', 'ano', 'hora', 'minuto'].map(n => ({name: n, type: 4, required: true}))
+            options: [
+                { name: 'dia', description: 'O dia do evento (DD)', type: 4, required: true },
+                { name: 'mes', description: 'O mês do evento (MM)', type: 4, required: true },
+                { name: 'ano', description: 'O ano do evento (AAAA)', type: 4, required: true },
+                { name: 'hora', description: 'A hora do evento (HH)', type: 4, required: true },
+                { name: 'minuto', description: 'O minuto do evento (mm)', type: 4, required: true }
+            ]
         }
     ];
 
