@@ -215,7 +215,7 @@ function gerarBotoes(tipo) {
     
     rows.push(new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('sair').setLabel('Sair da Lista').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('reset').setLabel('Resetar (Admin)').setStyle(ButtonStyle.Primary)
+        new ButtonBuilder().setCustomId('reset').setLabel('Resetar [Admin]').setStyle(ButtonStyle.Primary)
     ));
     return rows;
 }
@@ -243,6 +243,18 @@ client.once('ready', async () => {
                     name: 'quando', 
                     type: 3, 
                     description: 'Digite no formato DD/MM HH:MM', 
+                    required: true 
+                }
+            ]
+        },
+        {
+            name: 'criar',
+            description: 'Cria um novo tópico para organizar uma instância',
+            options: [
+                { 
+                    name: 'titulo', 
+                    type: 3, 
+                    description: 'Nome do tópico (ex: ET - 05/04 - 16h)', 
                     required: true 
                 }
             ]
@@ -344,7 +356,7 @@ client.on('interactionCreate', async interaction => {
             const msgAnuncio = await interaction.channel.send(
                 `📢 **A instância ${CONFIG_INSTANCIAS[dados.tipoInstancia].nome} foi MARCADA!**\n` +
                 `📅 **Início:** <t:${timestamp}:F>\n` +
-                `⚠️ <@&1100422246998233199>, preparem-se!`
+                `⚠️ <@&1100422246998233199>, inscrevam-se!`
             );
 
             dados.ultimaDataMsgId = msgAnuncio.id;
@@ -352,6 +364,33 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.reply({ content: '✅ Horário atualizado com sucesso!', ephemeral: true });
             await enviarPainelAtualizado(interaction.channel);
+        }
+
+        if (interaction.commandName === 'criar') {
+            const titulo = interaction.options.getString('titulo');
+            
+            try {
+                const topico = await interaction.channel.threads.create({
+                    name: titulo,
+                    autoArchiveDuration: 2880,
+                    reason: 'Organização de Instância pelo bot',
+                });
+
+                await topico.members.add(interaction.user.id);
+
+                await interaction.reply({ 
+                    content: `✅ Tópico **${titulo}** criado com sucesso! <#${topico.id}>`, 
+                    ephemeral: true 
+                });
+
+                await topico.send({ 
+                    content: `👋 Olá <@${interaction.user.id}>! Este tópico está pronto para a organização.\nUse \`/abrir\` para gerar o painel de vagas da instância desejada. \nEm seguida use \`/data\` para marcar o horário.`
+                });
+
+            } catch (error) {
+                console.error('Erro ao criar tópico:', error);
+                await interaction.reply({ content: '❌ Erro ao criar o tópico. Verifique minhas permissões!', ephemeral: true });
+            }
         }
 
         if (interaction.commandName === 'checklist') {
