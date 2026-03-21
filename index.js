@@ -403,7 +403,7 @@ client.on('interactionCreate', async interaction => {
                 });
 
                 await topico.send({ 
-                    content: `👋 Olá <@${interaction.user.id}>! Este tópico está pronto para a organizar a instância **${CONFIG_INSTANCIAS[dados.tipoInstancia].nome}**.\nUse /painel para gerar o painel de vagas da instância. \nEm seguida use /data para marcar o horário.`
+                    content: `👋 Olá <@${interaction.user.id}>! Este tópico está pronto para a organizar a instância **${CONFIG_INSTANCIAS[tipoSelecionado].nome}**.\nUse /painel para gerar o painel de vagas da instância. \nEm seguida use /data para marcar o horário.`
                 });
 
             } catch (error) {
