@@ -166,6 +166,15 @@ async function gerarEmbed(idDoCanal) {
     const infoInstancia = CONFIG_INSTANCIAS[dados.tipoInstancia];
     const contagemTexto = calcularContagem(dados.dataEvento);
     
+    let totalInscritos = 0;
+    dados.inscritos.forEach((lista, classe) => {
+        if (classe !== 'Reserva') {
+            totalInscritos += lista.length;
+        }
+    });
+
+    const statusGrupo = totalInscritos >= 12 ? "🔴 GRUPO CHEIO" : "🟢 VAGAS ABERTAS";
+
     let corEmbed = infoInstancia.cor; 
     if (dados.dataEvento) {
         const agora = new Date();
@@ -176,7 +185,7 @@ async function gerarEmbed(idDoCanal) {
 
     const embed = new EmbedBuilder()
         .setTitle(`${infoInstancia.emoji} ${infoInstancia.nome} - Inscrição`)
-        .setDescription(`${contagemTexto}\n\nSelecione sua classe abaixo.`)
+        .setDescription(`${contagemTexto}\n\n**Status do Grupo:** ${statusGrupo} (${totalInscritos}/12)\n\nSelecione sua classe abaixo.`)
         .setColor(corEmbed)
         .setFooter({ text: `ID: ${idDoCanal} | Tipo: ${dados.tipoInstancia.toUpperCase()}` });
 
@@ -394,7 +403,7 @@ client.on('interactionCreate', async interaction => {
                 });
 
                 await topico.send({ 
-                    content: `👋 Olá <@${interaction.user.id}>! Este tópico está pronto para a organizar a instância **${tipoSelecionado}**.\nUse /painel para gerar o painel de vagas da instância. \nEm seguida use /data para marcar o horário.`
+                    content: `👋 Olá <@${interaction.user.id}>! Este tópico está pronto para a organizar a instância **${CONFIG_INSTANCIAS[dados.tipoInstancia].nome}**.\nUse /painel para gerar o painel de vagas da instância. \nEm seguida use /data para marcar o horário.`
                 });
 
             } catch (error) {
@@ -544,8 +553,8 @@ client.on('interactionCreate', async interaction => {
                         name: '🚀 Roteiro de Organização (Passo a Passo)', 
                         value: '1️⃣ **Crie o Tópico:** Use `/criar` e escolha qual instância vai abrir (ET, EC, PT de Galho ou Celine).\n' +
                             '2️⃣ **Defina um título:** Ainda no `/criar` defina um título para seu tópico (por ex.: Galho - 20/03 - 20h).\n' +
-                            '3️⃣ **Defina o Horário:** Use `/data` preenchendo os campos no formato DD/MM HH:MM para marcar o início.\n' +
-                            '4️⃣ **Aguarde as Inscrições:** O cronômetro e as cores do painel atualizarão sozinhos.'
+                            '3️⃣ **Escolha sua classe:** Use `/painel` para gerar o painel de classes e fazer sua escolha.\n' +
+                            '4️⃣ **Defina o Horário:** Por fim, use `/data` preenchendo os campos no formato DD/MM HH:MM para marcar o início.'
                     },
                     { 
                         name: '🎮 Comandos de Jogador', 
