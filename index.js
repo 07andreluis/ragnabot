@@ -553,8 +553,8 @@ client.on('interactionCreate', async interaction => {
                         name: '🚀 Roteiro de Organização (Passo a Passo)', 
                         value: '1️⃣ **Crie o Tópico:** Com o **#instâncias** aberto use o comando `/criar` e escolha qual instância vai abrir (ET, EC, PT de Galho ou Celine).\n' +
                             '2️⃣ **Defina um título:** Ainda no `/criar` defina um título para seu tópico (por ex.: Galho - 20/03 - 20h).\n' +
-                            '3️⃣ **Escolha sua classe:** Use `/painel` para gerar o painel de classes e fazer sua escolha.\n' +
-                            '4️⃣ **Defina o Horário:** Por fim, use `/data` preenchendo os campos no formato DD/MM HH:MM para marcar o início.'
+                            '3️⃣ **Defina o Horário:** Use `/data` preenchendo os campos no formato DD/MM HH:MM para marcar o início.\n' +
+                            '4️⃣ **Escolha sua classe:** Automaticamente o comando `/painel` é disparado e o painel de classes é gerado para você e os outros fazerem suas escolhas.'
                     },
                     { 
                         name: '🎮 Comandos de Jogador', 
