@@ -592,6 +592,7 @@ client.on('interactionCreate', async interaction => {
                             '• **/painel** - Gera o painel de inscrição. Obs.: use sempre que quiser chamar o painel p/ mensagens recentes.\n' +
                             '• **/adicionar** - Selecione o usuário e a classe para colocar alguém direto na vaga.\n' +
                             '• **/remover** - Retira um membro da vaga ocupada através da seleção de usuário.\n' +
+                            '• **/lider** - Transfere a liderança do grupo de um membro para outro.\n' +
                             '• **Botão Resetar:** Limpa todas as vagas da instância atual.'
                     },
                     { 
