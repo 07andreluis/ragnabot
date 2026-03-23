@@ -42,8 +42,9 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds, 
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMembers, 
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildPresences
     ] 
 });
 
@@ -691,12 +692,10 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.DISCORD_TOKEN)
+    .then(() => console.log('🚀 Login solicitado ao Discord com sucesso!'))
+    .catch(err => console.error('❌ ERRO CRÍTICO NO LOGIN:', err));
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('⚠️ Erro Rejeitado:', reason);
-});
-
-process.on('uncaughtException', (err, origin) => {
-    console.error('⚠️ Exceção não capturada:', err);
+    console.error('⚠️ Erro Rejeitado não tratado:', reason);
 });
