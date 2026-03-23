@@ -4,19 +4,11 @@ const mongoose = require('mongoose');
 const http = require('http');
 
 // --- SERVIDOR PARA RECEBER O CRON-JOB ---
-http.createServer(async (_, res) => {
-    try {
-        await verificarAlertas();
-        res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8'});
-        res.write("Bot: ONLINE | Alertas: Processados");
-        res.end();
-    } catch (err) {
-        console.error("Erro no processamento do servidor HTTP:", err);
-        res.writeHead(500);
-        res.end();
-    }
+http.createServer((req, res) => {
+    res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8'});
+    res.end("Sistema Operacional"); // Resposta imediata para o Render e Cron-job
 }).listen(process.env.PORT || 10000, '0.0.0.0', () => {
-    console.log(`✅ Servidor de monitoramento ativo na porta ${process.env.PORT || 10000}`);
+    console.log(`✅ Monitoramento ativo na porta ${process.env.PORT || 10000}`);
 });
 
 // Conexão com o MongoDB
