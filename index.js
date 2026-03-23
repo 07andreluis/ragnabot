@@ -48,6 +48,10 @@ const client = new Client({
     ] 
 });
 
+client.login(process.env.DISCORD_TOKEN)
+    .then(() => console.log('📡 Tentativa de login enviada ao Discord...'))
+    .catch(err => console.error('❌ Erro no Login:', err));
+
 const CONFIG_INSTANCIAS = {
     et: {
         nome: "Endless Tower (ET)",
@@ -690,12 +694,4 @@ client.on('interactionCreate', async interaction => {
         await dados.save();
         await interaction.update({ embeds: [await gerarEmbed(canalId)] });
     }
-});
-
-client.login(process.env.DISCORD_TOKEN)
-    .then(() => console.log('🚀 Login solicitado ao Discord com sucesso!'))
-    .catch(err => console.error('❌ ERRO CRÍTICO NO LOGIN:', err));
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('⚠️ Erro Rejeitado não tratado:', reason);
 });
