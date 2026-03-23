@@ -15,8 +15,8 @@ http.createServer(async (_, res) => {
         res.writeHead(500);
         res.end();
     }
-}).listen(process.env.PORT || 3000, () => {
-    console.log("Servidor de monitoramento rodando na porta 3000");
+}).listen(process.env.PORT || 10000, '0.0.0.0', () => {
+    console.log(`✅ Servidor de monitoramento ativo na porta ${process.env.PORT || 10000}`);
 });
 
 // Conexão com o MongoDB
@@ -690,3 +690,11 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('⚠️ Erro Rejeitado:', reason);
+});
+
+process.on('uncaughtException', (err, origin) => {
+    console.error('⚠️ Exceção não capturada:', err);
+});
