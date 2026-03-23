@@ -21,8 +21,16 @@ http.createServer(async (_, res) => {
 
 // Conexão com o MongoDB
 mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log('✅ Conectado ao MongoDB com sucesso!'))
-    .catch(err => console.error('❌ Erro ao conectar ao MongoDB:', err));
+    .then(() => {
+        console.log('✅ Conectado ao MongoDB com sucesso!');
+        return client.login(process.env.DISCORD_TOKEN);
+    })
+    .then(() => {
+        console.log('🚀 BOT LOGADO E ONLINE NO DISCORD!');
+    })
+    .catch(err => {
+        console.error('❌ ERRO NA INICIALIZAÇÃO:', err.message);
+    });
 
 // Esquema do Banco de Dados
 const InstanciaSchema = new mongoose.Schema({
