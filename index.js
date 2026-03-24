@@ -151,40 +151,58 @@ async function enviarPainelAtualizado(channel) {
 
 async function verificarAlertas() {
     try {
-        const listaAlertas = await Instancia.find({});
+        const agora = new Date();
+        // 1. Buscamos apenas instâncias que tenham data definida e que ainda não enviaram todos os alertas
+        const eventos = await Instancia.find({ 
+            dataEvento: { $ne: null },
+            $expr: { $lt: [{ $size: "$alertasEnviados" }, 2] } // 2 é o número de gatilhos (24h e 1h)
+        });
 
-        if (!listaAlertas || listaAlertas.length === 0) return;
+        if (!eventos || eventos.length === 0) return;
 
-        for (const alerta of listaAlertas) {
+        for (const evento of eventos) {
             try {
-                if (!alerta.guildId || !alerta.channelId) continue;
+                // 2. Cálculo da diferença de tempo
+                const diffMinutos = Math.floor((evento.dataEvento - agora) / (1000 * 60));
+                
+                // Gatilhos simplificados conforme sua solicitação
+                const gatilhos = [
+                    { m: 1440, nome: '24h' },
+                    { m: 60,   nome: '1h' }
+                ];
 
-                const canal = client.channels.cache.get(alerta.channelId);
-                if (canal) {
-                    const agora = new Date();
-                    const eventos = await Instancia.find({ dataEvento: { $ne: null } });
-                    for (const evento of eventos) {
-                        const diffMinutos = Math.floor((evento.dataEvento - agora) / (1000 * 60));
-                        const gatilhos = [
-                            { m: 1440, nome: '24h' },
-                            { m: 60,   nome: '1h' }
-                        ];
-                        for (const g of gatilhos) {
-                            if (diffMinutos <= g.m && diffMinutos > (g.m - 10) && !evento.alertasEnviados.includes(g.nome)) {
-                                const canal = await client.channels.fetch(evento.eventoId).catch(() => null);
-                                if (canal) {
-                                    let mencoes = "";
-                                    evento.inscritos.forEach(lista => lista.forEach(id => { if (!mencoes.includes(id)) mencoes += `${id} `; }));
-                                    await canal.send(`🔔 **ALERTA DE ${g.nome}!**\n📍 A **${CONFIG_INSTANCIAS[evento.tipoInstancia].nome}** começará em ${g.nome}!\n👥 Participantes: ${mencoes}\n💡 *Dica: Digite **/checklist** para ver os itens e equipamentos obrigatórios.*`);
-                                    evento.alertasEnviados.push(g.nome);
-                                    await evento.save();
-                                }
+                for (const g of gatilhos) {
+                    // Verifica se está no tempo do alerta e se ele já não foi enviado
+                    if (diffMinutos <= g.m && diffMinutos > (g.m - 10) && !evento.alertasEnviados.includes(g.nome)) {
+                        
+                        // Busca o canal (tópico) usando o eventoId salvo no banco
+                        const canal = await client.channels.fetch(evento.eventoId).catch(() => null);
+                        
+                        if (canal) {
+                            let mencoes = "";
+                            // Extrai os IDs de quem está inscrito para mencionar
+                            if (evento.inscritos instanceof Map) {
+                                evento.inscritos.forEach(lista => {
+                                    if (Array.isArray(lista)) {
+                                        lista.forEach(id => {
+                                            if (!mencoes.includes(id)) mencoes += `${id} `;
+                                        });
+                                    }
+                                });
                             }
+
+                            const config = CONFIG_INSTANCIAS[evento.tipoInstancia] || CONFIG_INSTANCIAS.et;
+
+                            await canal.send(`🔔 **ALERTA DE ${g.nome}!**\n📍 A **${config.nome}** começará em ${g.nome}!\n👥 Participantes: ${mencoes}\n💡 *Dica: Digite **/checklist** para ver os suprimentos.*`);
+                            
+                            // 3. Salva que o alerta foi enviado para não repetir no próximo minuto
+                            evento.alertasEnviados.push(g.nome);
+                            await evento.save();
                         }
                     }
                 }
             } catch (errorInterno) {
-                console.error(`⚠️ Erro ao processar o alerta do servidor ${alerta.guildId}:`, errorInterno.message);
+                console.error(`⚠️ Erro ao processar alerta da instância ${evento.eventoId}:`, errorInterno.message);
                 continue; 
             }
         }
