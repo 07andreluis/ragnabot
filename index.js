@@ -4,26 +4,38 @@ const mongoose = require('mongoose');
 const http = require('http');
 
 // --- SERVIDOR PARA RECEBER O CRON-JOB ---
-http.createServer(async (_, res) => {
-    try {
-        await verificarAlertas();
-        res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8'});
-        res.write("Bot: ONLINE | Alertas: Processados");
-        res.end();
-    } catch (err) {
-        console.error("Erro no processamento do servidor HTTP:", err);
-        res.writeHead(500);
-        res.end();
-    }
-}).listen(process.env.PORT || 3000, () => {
-    console.log("Servidor de monitoramento rodando na porta 3000");
+const server = http.createServer((_, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end("Bot Status: Operacional");
 });
 
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Servidor de monitoramento ativo na porta ${PORT}`);
+});
+
+const client = new Client({ 
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildPresences
+    ] 
+});
 // Conexão com o MongoDB
 mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log('✅ Conectado ao MongoDB com sucesso!'))
-    .catch(err => console.error('❌ Erro ao conectar ao MongoDB:', err));
-
+    .then(() => {
+        console.log('✅ Conectado ao MongoDB com sucesso!');
+        return client.login(process.env.DISCORD_TOKEN);
+    })
+    .then(() => {
+        console.log('🚀 BOT LOGADO E ONLINE NO DISCORD!');
+    })
+    .catch(err => {
+        console.error('❌ ERRO CRÍTICO NA INICIALIZAÇÃO:', err.message);
+    });
+    
 // Esquema do Banco de Dados
 const InstanciaSchema = new mongoose.Schema({
     eventoId: { type: String, required: true },
@@ -37,13 +49,6 @@ const InstanciaSchema = new mongoose.Schema({
 });
 
 const Instancia = mongoose.model('Instancia', InstanciaSchema);
-
-const client = new Client({ 
-    intents: [
-        GatewayIntentBits.Guilds, 
-        GatewayIntentBits.GuildMessages
-    ] 
-});
 
 const CONFIG_INSTANCIAS = {
     et: {
