@@ -4,25 +4,25 @@ const mongoose = require('mongoose');
 const http = require('http');
 
 // --- SERVIDOR PARA RECEBER O CRON-JOB ---
-http.createServer((req, res) => {
-    res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8'});
-    res.end("Sistema Operacional"); // Resposta imediata para o Render e Cron-job
-}).listen(process.env.PORT || 10000, '0.0.0.0', () => {
-    console.log(`✅ Monitoramento ativo na porta ${process.env.PORT || 10000}`);
+http.createServer(async (_, res) => {
+    try {
+        await verificarAlertas();
+        res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8'});
+        res.write("Bot: ONLINE | Alertas: Processados");
+        res.end();
+    } catch (err) {
+        console.error("Erro no processamento do servidor HTTP:", err);
+        res.writeHead(500);
+        res.end();
+    }
+}).listen(process.env.PORT || 3000, () => {
+    console.log("Servidor de monitoramento rodando na porta 3000");
 });
 
 // Conexão com o MongoDB
 mongoose.connect(process.env.MONGO_URI)
-    .then(() => {
-        console.log('✅ Conectado ao MongoDB com sucesso!');
-        return client.login(process.env.DISCORD_TOKEN);
-    })
-    .then(() => {
-        console.log('🚀 BOT LOGADO E ONLINE NO DISCORD!');
-    })
-    .catch(err => {
-        console.error('❌ ERRO NA INICIALIZAÇÃO:', err.message);
-    });
+    .then(() => console.log('✅ Conectado ao MongoDB com sucesso!'))
+    .catch(err => console.error('❌ Erro ao conectar ao MongoDB:', err));
 
 // Esquema do Banco de Dados
 const InstanciaSchema = new mongoose.Schema({
@@ -41,16 +41,9 @@ const Instancia = mongoose.model('Instancia', InstanciaSchema);
 const client = new Client({ 
     intents: [
         GatewayIntentBits.Guilds, 
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences
+        GatewayIntentBits.GuildMessages
     ] 
 });
-
-client.login(process.env.DISCORD_TOKEN)
-    .then(() => console.log('📡 Tentativa de login enviada ao Discord...'))
-    .catch(err => console.error('❌ Erro no Login:', err));
 
 const CONFIG_INSTANCIAS = {
     et: {
@@ -695,3 +688,5 @@ client.on('interactionCreate', async interaction => {
         await interaction.update({ embeds: [await gerarEmbed(canalId)] });
     }
 });
+
+client.login(process.env.DISCORD_TOKEN);
