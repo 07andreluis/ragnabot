@@ -23,7 +23,7 @@ mongoose.connect(process.env.MONGO_URI)
     .then(async () => {
         console.log('✅ Conectado ao MongoDB com sucesso!');
         try {
-            const testeDados = await Instancia.findOne(); 
+            await Instancia.findOne();
             console.log('📊 Banco de dados lido com sucesso.');
         } catch (dbErr) {
             console.error('⚠️ Erro ao ler dados do banco. Os dados podem estar corrompidos:', dbErr.message);
@@ -152,35 +152,25 @@ async function enviarPainelAtualizado(channel) {
 async function verificarAlertas() {
     try {
         const agora = new Date();
-        // 1. Buscamos apenas instâncias que tenham data definida e que ainda não enviaram todos os alertas
-        const eventos = await Instancia.find({ 
-            dataEvento: { $ne: null },
-            $expr: { $lt: [{ $size: "$alertasEnviados" }, 2] } // 2 é o número de gatilhos (24h e 1h)
-        });
+        const eventos = await Instancia.find({ dataEvento: { $ne: null } });
 
         if (!eventos || eventos.length === 0) return;
 
         for (const evento of eventos) {
             try {
-                // 2. Cálculo da diferença de tempo
                 const diffMinutos = Math.floor((evento.dataEvento - agora) / (1000 * 60));
                 
-                // Gatilhos simplificados conforme sua solicitação
                 const gatilhos = [
                     { m: 1440, nome: '24h' },
                     { m: 60,   nome: '1h' }
                 ];
 
                 for (const g of gatilhos) {
-                    // Verifica se está no tempo do alerta e se ele já não foi enviado
                     if (diffMinutos <= g.m && diffMinutos > (g.m - 10) && !evento.alertasEnviados.includes(g.nome)) {
-                        
-                        // Busca o canal (tópico) usando o eventoId salvo no banco
                         const canal = await client.channels.fetch(evento.eventoId).catch(() => null);
                         
                         if (canal) {
                             let mencoes = "";
-                            // Extrai os IDs de quem está inscrito para mencionar
                             if (evento.inscritos instanceof Map) {
                                 evento.inscritos.forEach(lista => {
                                     if (Array.isArray(lista)) {
@@ -195,7 +185,6 @@ async function verificarAlertas() {
 
                             await canal.send(`🔔 **ALERTA DE ${g.nome}!**\n📍 A **${config.nome}** começará em ${g.nome}!\n👥 Participantes: ${mencoes}\n💡 *Dica: Digite **/checklist** para ver os suprimentos.*`);
                             
-                            // 3. Salva que o alerta foi enviado para não repetir no próximo minuto
                             evento.alertasEnviados.push(g.nome);
                             await evento.save();
                         }
