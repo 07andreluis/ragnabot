@@ -4,29 +4,31 @@ const mongoose = require('mongoose');
 const http = require('http');
 
 // --- SERVIDOR PARA RECEBER O CRON-JOB ---
-const server = http.createServer((_, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end("Bot Status: Operacional");
-});
-
-const PORT = process.env.PORT || 10000;
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Servidor de monitoramento ativo na porta ${PORT}`);
-});
-
-const client = new Client({ 
-    intents: [
-        GatewayIntentBits.Guilds, 
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences
-    ] 
+http.createServer(async (_, res) => {
+    try {
+        await verificarAlertas();
+        res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8'});
+        res.write("Bot: ONLINE | Alertas: Processados");
+        res.end();
+    } catch (err) {
+        console.error("Erro no processamento do servidor HTTP:", err);
+        res.writeHead(500);
+        res.end();
+    }
+}).listen(process.env.PORT || 10000, () => {
+    console.log("Servidor de monitoramento rodando na porta 10000");
 });
 // Conexão com o MongoDB
 mongoose.connect(process.env.MONGO_URI)
-    .then(() => {
+    .then(async () => {
         console.log('✅ Conectado ao MongoDB com sucesso!');
+        try {
+            const testeDados = await Alerta.findOne(); 
+            console.log('📊 Banco de dados lido com sucesso.');
+        } catch (dbErr) {
+            console.error('⚠️ Erro ao ler dados do banco. Os dados podem estar corrompidos:', dbErr.message);
+        }
+
         return client.login(process.env.DISCORD_TOKEN);
     })
     .then(() => {
@@ -34,6 +36,9 @@ mongoose.connect(process.env.MONGO_URI)
     })
     .catch(err => {
         console.error('❌ ERRO CRÍTICO NA INICIALIZAÇÃO:', err.message);
+        if (err.message.includes('429')) {
+            console.error('🛑 Bloqueio por excesso de tentativas. Aguarde 20 minutos.');
+        }
     });
     
 // Esquema do Banco de Dados
@@ -49,6 +54,16 @@ const InstanciaSchema = new mongoose.Schema({
 });
 
 const Instancia = mongoose.model('Instancia', InstanciaSchema);
+
+const client = new Client({ 
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildPresences
+    ] 
+});
 
 const CONFIG_INSTANCIAS = {
     et: {
@@ -135,29 +150,51 @@ async function enviarPainelAtualizado(channel) {
 }
 
 async function verificarAlertas() {
-    const agora = new Date();
-    const eventos = await Instancia.find({ dataEvento: { $ne: null } });
-    for (const evento of eventos) {
-        const diffMinutos = Math.floor((evento.dataEvento - agora) / (1000 * 60));
-        const gatilhos = [
-            { m: 1440, nome: '24h' },
-            { m: 180,  nome: '3h' },
-            { m: 60,   nome: '1h' }
-        ];
-        for (const g of gatilhos) {
-            if (diffMinutos <= g.m && diffMinutos > (g.m - 10) && !evento.alertasEnviados.includes(g.nome)) {
-                const canal = await client.channels.fetch(evento.eventoId).catch(() => null);
+    try {
+        const listaAlertas = await Alerta.find({});
+
+        if (!listaAlertas || listaAlertas.length === 0) return;
+
+        for (const alerta of listaAlertas) {
+            try {
+                if (!alerta.guildId || !alerta.channelId) continue;
+
+                const canal = client.channels.cache.get(alerta.channelId);
                 if (canal) {
-                    let mencoes = "";
-                    evento.inscritos.forEach(lista => lista.forEach(id => { if (!mencoes.includes(id)) mencoes += `${id} `; }));
-                    await canal.send(`🔔 **ALERTA DE ${g.nome}!**\n📍 A **${CONFIG_INSTANCIAS[evento.tipoInstancia].nome}** começará em ${g.nome}!\n👥 Participantes: ${mencoes}\n💡 *Dica: Digite **/checklist** para ver os itens e equipamentos obrigatórios.*`);
-                    evento.alertasEnviados.push(g.nome);
-                    await evento.save();
+                    const agora = new Date();
+                    const eventos = await Instancia.find({ dataEvento: { $ne: null } });
+                    for (const evento of eventos) {
+                        const diffMinutos = Math.floor((evento.dataEvento - agora) / (1000 * 60));
+                        const gatilhos = [
+                            { m: 1440, nome: '24h' },
+                            { m: 180,  nome: '3h' },
+                            { m: 60,   nome: '1h' }
+                        ];
+                        for (const g of gatilhos) {
+                            if (diffMinutos <= g.m && diffMinutos > (g.m - 10) && !evento.alertasEnviados.includes(g.nome)) {
+                                const canal = await client.channels.fetch(evento.eventoId).catch(() => null);
+                                if (canal) {
+                                    let mencoes = "";
+                                    evento.inscritos.forEach(lista => lista.forEach(id => { if (!mencoes.includes(id)) mencoes += `${id} `; }));
+                                    await canal.send(`🔔 **ALERTA DE ${g.nome}!**\n📍 A **${CONFIG_INSTANCIAS[evento.tipoInstancia].nome}** começará em ${g.nome}!\n👥 Participantes: ${mencoes}\n💡 *Dica: Digite **/checklist** para ver os itens e equipamentos obrigatórios.*`);
+                                    evento.alertasEnviados.push(g.nome);
+                                    await evento.save();
+                                }
+                            }
+                        }
+                    }
                 }
+            } catch (errorInterno) {
+                console.error(`⚠️ Erro ao processar o alerta do servidor ${alerta.guildId}:`, errorInterno.message);
+                continue; 
             }
         }
+    } catch (errGeral) {
+        console.error('❌ Erro crítico na função verificarAlertas:', errGeral.message);
     }
 }
+
+setInterval(verificarAlertas, 60000);
 
 async function getDadosInstancia(idDoCanal) {
     let dados = await Instancia.findOne({ eventoId: idDoCanal });
@@ -652,23 +689,57 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    if (interaction.isButton()) {
+    if (!interaction.isButton()) return;
+
+    try {
         const dados = await Instancia.findOne({ eventoId: canalId });
-        if (!dados) return;
-        const tipoTecnico = dados.tipoInstancia?dados.tipoInstancia.toLowerCase():'et';
+        
+        if (!dados) {
+            return interaction.reply({ 
+                content: '❌ Este evento não foi encontrado no banco de dados ou já expirou.', 
+                ephemeral: true 
+            });
+        }
+
+        const tipoTecnico = dados.tipoInstancia ? dados.tipoInstancia.toLowerCase() : 'et';
         const infoInstancia = CONFIG_INSTANCIAS[tipoTecnico];
-        const limiteMaximo = infoInstancia?.limiteGrupo || 12;
+
+        if (!infoInstancia) {
+            console.error(`⚠️ Configuração não encontrada para o tipo: ${tipoTecnico}`);
+            return interaction.reply({ 
+                content: '❌ Erro interno: Configurações deste tipo de instância não foram encontradas.', 
+                ephemeral: true 
+            });
+        }
+
+        const limiteMaximo = infoInstancia.limiteGrupo || 12;
+
         if (interaction.customId === 'sair') {
-            dados.inscritos.forEach((l, k) => dados.inscritos.set(k, l.filter(id => id !== userId)));
-        } else if (interaction.customId === 'reset') {
-            if (!interaction.member.permissions.has('Administrator')) return interaction.reply({ content: 'Apenas administradores podem resetar.', ephemeral: true });
+            if (dados.inscritos instanceof Map) {
+                dados.inscritos.forEach((l, k) => {
+                    if (Array.isArray(l)) {
+                        dados.inscritos.set(k, l.filter(id => id !== userId));
+                    }
+                });
+            }
+        } 
+        
+        else if (interaction.customId === 'reset') {
+            if (!interaction.member.permissions.has('Administrator')) {
+                return interaction.reply({ content: 'Apenas administradores podem resetar.', ephemeral: true });
+            }
             dados.inscritos = new Map();
-        } else {
+        } 
+        
+        else {
             const classe = interaction.customId.replace('insc_', '');
+            
             if (classe !== 'Reserva') {
                 let totalAtual = 0;
                 dados.inscritos.forEach((lista, nomeClasse) => {
-                    if (nomeClasse !== 'Reserva') totalAtual += lista.length;
+                    if (nomeClasse !== 'Reserva' && Array.isArray(lista)) {
+                        totalAtual += lista.length;
+                    }
                 });
 
                 if (totalAtual >= limiteMaximo) {
@@ -681,16 +752,39 @@ client.on('interactionCreate', async interaction => {
             
             const lista = dados.inscritos.get(classe) || [];
             let jaInscrito = false;
-            dados.inscritos.forEach(l => { if (l.includes(userId)) jaInscrito = true; });
+            
+            dados.inscritos.forEach(l => { 
+                if (Array.isArray(l) && l.includes(userId)) jaInscrito = true; 
+            });
 
-            if (jaInscrito) return interaction.reply({ content: 'Você já está em uma classe!', ephemeral: true });
-            if (lista.length >= CONFIG_INSTANCIAS[dados.tipoInstancia].classes[classe].limite) return interaction.reply({ content: 'Esta classe está cheia!', ephemeral: true });
+            if (jaInscrito) {
+                return interaction.reply({ content: 'Você já está em uma classe!', ephemeral: true });
+            }
+
+            const configClasse = infoInstancia.classes ? infoInstancia.classes[classe] : null;
+            if (configClasse && lista.length >= configClasse.limite) {
+                return interaction.reply({ content: 'Esta classe está cheia!', ephemeral: true });
+            }
 
             lista.push(userId);
             dados.inscritos.set(classe, lista);
         }
+
         await dados.save();
-        await interaction.update({ embeds: [await gerarEmbed(canalId)] });
+        
+        await interaction.update({ 
+            embeds: [await gerarEmbed(canalId)] 
+        });
+
+    } catch (error) {
+        console.error('❌ Erro crítico na interação de botão:', error);
+        
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ 
+                content: '⚠️ Ocorreu um erro ao processar sua inscrição. Por favor, tente novamente.', 
+                ephemeral: true 
+            });
+        }
     }
 });
 
