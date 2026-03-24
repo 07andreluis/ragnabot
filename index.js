@@ -40,8 +40,11 @@ const Instancia = mongoose.model('Instancia', InstanciaSchema);
 
 const client = new Client({ 
     intents: [
-        GatewayIntentBits.Guilds, 
-        GatewayIntentBits.GuildMessages
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildPresences
     ] 
 });
 
@@ -93,7 +96,7 @@ const CONFIG_INSTANCIAS = {
             'Devo': { limite: 1, emoji: '🛡️' },
             'CF': { limite: 1, emoji: '💪' },
             'Prof': { limite: 1, emoji: '📚' },
-            'Leechers': { limite: 2, emoji: '👶' },
+            'Leecher': { limite: 2, emoji: '👶' },
             'Reserva': { limite: 5, emoji: '⏳' }
         }
     },
@@ -121,6 +124,7 @@ function calcularContagem(dataEvento) {
 
 async function enviarPainelAtualizado(channel) {
     const dados = await Instancia.findOne({ eventoId: channel.id });
+    if (!dados) return;
     if (dados?.ultimaMensagemId) {
         try { await (await channel.messages.fetch(dados.ultimaMensagemId)).delete(); } catch {}
     }
@@ -136,7 +140,6 @@ async function verificarAlertas() {
         const diffMinutos = Math.floor((evento.dataEvento - agora) / (1000 * 60));
         const gatilhos = [
             { m: 1440, nome: '24h' },
-            { m: 180,  nome: '3h' },
             { m: 60,   nome: '1h' }
         ];
         for (const g of gatilhos) {
@@ -327,7 +330,6 @@ client.on('interactionCreate', async interaction => {
     const dados = await Instancia.findOne({ eventoId: canalId });
 
     if (interaction.isChatInputCommand()) {
-        await interaction.deferReply({ ephemeral: true });
         let dados = await Instancia.findOne({ eventoId: canalId });
         if (interaction.commandName === 'painel') {
             if (!dados) return interaction.reply({ content: '❌ Use `/criar` primeiro!', ephemeral: true });
@@ -344,12 +346,15 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.commandName === 'data') {
+            await interaction.deferReply({ ephemeral: true });
+            const canalId = interaction.channel.id;
             const entrada = interaction.options.getString('quando');
             const formatoValido = /^(\d{2})\/(\d{2})\s(\d{2}):(\d{2})$/;
             const match = entrada.match(formatoValido);
+            const dados = await Instancia.findOne({ eventoId: canalId });
 
             if (!match) {
-                return interaction.reply({ 
+                return interaction.editReply({ 
                     content: '❌ Formato inválido! Use: **DD/MM HH:MM** (Ex: 05/04 19:30)', 
                     ephemeral: true 
                 });
@@ -361,13 +366,13 @@ client.on('interactionCreate', async interaction => {
             const novaData = new Date(dataString);
 
             if (isNaN(novaData.getTime())) {
-                return interaction.reply({ content: '❌ Data ou hora numericamente inválida!', ephemeral: true });
+                return interaction.editReply({ content: '❌ Data ou hora numericamente inválida!', ephemeral: true });
             }
 
-            if (!dados) return interaction.reply({ content: '❌ Instância não encontrada.', ephemeral: true });
+            if (!dados) return interaction.editReply({ content: '❌ Instância não encontrada.', ephemeral: true });
             
             if (interaction.user.id !== dados.criadorId && !interaction.member.permissions.has('Administrator')) {
-                return interaction.reply({ content: '❌ Sem permissão para alterar a data.', ephemeral: true });
+                return interaction.editReply({ content: '❌ Sem permissão para alterar a data.', ephemeral: true });
             }
 
             if (dados.ultimaDataMsgId) {
@@ -391,11 +396,12 @@ client.on('interactionCreate', async interaction => {
             dados.ultimaDataMsgId = msgAnuncio.id;
             await dados.save();
 
-            await interaction.reply({ content: '✅ Horário atualizado com sucesso!', ephemeral: true });
+            await interaction.editReply({ content: '✅ Horário atualizado com sucesso!', ephemeral: true });
             await enviarPainelAtualizado(interaction.channel);
         }
 
         if (interaction.commandName === 'criar') {
+            await interaction.deferReply({ ephemeral: true });
             const tipoSelecionado = interaction.options.getString('instancia');
             const titulo = interaction.options.getString('titulo');
             
@@ -417,7 +423,7 @@ client.on('interactionCreate', async interaction => {
                 await novaInstancia.save();
 
                 await topico.members.add(interaction.user.id);
-                await interaction.reply({ 
+                await interaction.editReply({ 
                     content: `✅ Tópico **${titulo}** criado com sucesso! <#${topico.id}>`, 
                     ephemeral: true 
                 });
@@ -428,7 +434,7 @@ client.on('interactionCreate', async interaction => {
 
             } catch (error) {
                 console.error('Erro ao criar tópico:', error);
-                await interaction.reply({ content: '❌ Erro ao criar o tópico. Verifique minhas permissões!', ephemeral: true });
+                await interaction.editReply({ content: '❌ Erro ao criar o tópico. Verifique minhas permissões!', ephemeral: true });
             }
         }
 
@@ -611,6 +617,8 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.commandName === 'lider') {
+            const canalId = interaction.channel.id;
+            const dados = await Instancia.findOne({ eventoId: canalId });
             if (!dados) {
                 return interaction.reply({ content: '❌ Não há uma instância ativa neste tópico.', ephemeral: true });
             }
@@ -641,10 +649,19 @@ client.on('interactionCreate', async interaction => {
                 content: `👑 **Transferência de Liderança**\nO usuário <@${interaction.user.id}> passou o comando do grupo para **${novoLider.username}**!` 
             });
 
-            const embedAtualizado = await gerarEmbed(canalId);
-            await interaction.channel.messages.fetch(dados.painelId).then(msg => {
-                msg.edit({ embeds: [embedAtualizado] });
-            }).catch(err => console.log("Erro ao atualizar painel após troca de líder:", err));
+            try {
+                const embedAtualizado = await gerarEmbed(canalId);
+                const canalOriginal = await client.channels.fetch(interaction.channel.parentId); // Busca o canal onde o painel está
+                
+                if (canalOriginal) {
+                    const msgPainel = await canalOriginal.messages.fetch(dados.painelId);
+                    if (msgPainel && typeof msgPainel.edit === 'function') {
+                        await msgPainel.edit({ embeds: [embedAtualizado] });
+                    }
+                }
+            } catch (err) {
+                console.error("⚠️ Erro ao atualizar painel após troca de líder:", err.message);
+            }
         }
     }
 
