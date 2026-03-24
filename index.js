@@ -23,7 +23,7 @@ mongoose.connect(process.env.MONGO_URI)
     .then(async () => {
         console.log('✅ Conectado ao MongoDB com sucesso!');
         try {
-            const testeDados = await Alerta.findOne(); 
+            const testeDados = await Instancia.findOne(); 
             console.log('📊 Banco de dados lido com sucesso.');
         } catch (dbErr) {
             console.error('⚠️ Erro ao ler dados do banco. Os dados podem estar corrompidos:', dbErr.message);
@@ -151,7 +151,7 @@ async function enviarPainelAtualizado(channel) {
 
 async function verificarAlertas() {
     try {
-        const listaAlertas = await Alerta.find({});
+        const listaAlertas = await Instancia.find({});
 
         if (!listaAlertas || listaAlertas.length === 0) return;
 
@@ -167,7 +167,6 @@ async function verificarAlertas() {
                         const diffMinutos = Math.floor((evento.dataEvento - agora) / (1000 * 60));
                         const gatilhos = [
                             { m: 1440, nome: '24h' },
-                            { m: 180,  nome: '3h' },
                             { m: 60,   nome: '1h' }
                         ];
                         for (const g of gatilhos) {
