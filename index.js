@@ -411,8 +411,8 @@ client.on('interactionCreate', async interaction => {
             const timestamp = Math.floor(novaData.getTime() / 1000);
             const msgAnuncio = await interaction.channel.send(
                 `📢 **A instância ${CONFIG_INSTANCIAS[dados.tipoInstancia].nome} foi MARCADA!**\n` +
-                `📅 **Início:** <t:${timestamp}:F>\n` //+
-                //`⚠️ <@&1100422246998233199>, inscrevam-se!`
+                `📅 **Início:** <t:${timestamp}:F>\n` +
+                `⚠️ <@&1100422246998233199>, inscrevam-se!`
             );
 
             dados.ultimaDataMsgId = msgAnuncio.id;
