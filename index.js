@@ -200,7 +200,7 @@ async function gerarEmbed(idDoCanal) {
     const embed = new EmbedBuilder()
         .setTitle(`${infoInstancia.emoji} ${infoInstancia.nome} - Inscrição`)
         .setDescription(`${contagemTexto}\n\n**Status do Grupo:** ${statusGrupo} (${totalInscritos}/${limiteMaximo})\n\nSelecione sua classe abaixo.`)
-        .setColor(infoInstancia.cor)
+        .setColor(corEmbed)
         .setFooter({ text: `ID: ${idDoCanal} | Líder do Grupo: ${nomeLider}` });
 
     for (const [classe, info] of Object.entries(infoInstancia.classes)) {
@@ -461,7 +461,8 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.commandName === 'checklist') {
-            if (!dados) return interaction.reply({ content: '❌ Instância não configurada. Use /criar primeiro.', ephemeral: true });
+            await interaction.deferReply({ ephemeral: true });
+            if (!dados) return interaction.editReply({ content: '❌ Instância não configurada. Use /criar primeiro.', ephemeral: true });
             const embed = new EmbedBuilder();
             if (dados.tipoInstancia === 'et') {
                 embed.setTitle('🎒 Checklist de Suprimentos - Torre Sem Fim')
@@ -513,7 +514,7 @@ client.on('interactionCreate', async interaction => {
                     .setFooter({ text: '💡 Dica: Use o RODEX para enviar itens e economizar peso!' });
             }
 
-            await interaction.reply({ embeds: [embed] });
+            await interaction.editReply({ embeds: [embed] });
         }
 
         if (interaction.commandName === 'adicionar') {
@@ -598,6 +599,7 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.commandName === 'ajuda') {
+            await interaction.deferReply({ ephemeral: true });
             const embedAjuda = new EmbedBuilder()
                 .setTitle('📖 Guia de Operação - Organizador de Instâncias')
                 .setDescription('Siga o roteiro abaixo para organizar sua instância com eficiência:')
@@ -638,7 +640,7 @@ client.on('interactionCreate', async interaction => {
                 )
                 .setFooter({ text: 'Sistema de Apoio ao Clã criado por André Luís' });
 
-            await interaction.reply({ embeds: [embedAjuda], ephemeral: true });
+            await interaction.editReply({ embeds: [embedAjuda], ephemeral: true });
         }
 
         if (interaction.commandName === 'lider') {
@@ -677,7 +679,7 @@ client.on('interactionCreate', async interaction => {
 
             try {
                 const embedAtualizado = await gerarEmbed(canalId);
-                const canalOriginal = await client.channels.fetch(interaction.channel.parentId); // Busca o canal onde o painel está
+                const canalOriginal = await client.channels.fetch(interaction.channel.parentId);
                 
                 if (canalOriginal) {
                     const msgPainel = await canalOriginal.messages.fetch(dados.painelId);
@@ -692,6 +694,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (interaction.isButton()) {
+        await interaction.deferReply({ ephemeral: true });
         const dados = await Instancia.findOne({ eventoId: canalId });
         if (!dados) return;
         const tipoTecnico = dados.tipoInstancia?dados.tipoInstancia.toLowerCase():'et';
@@ -700,7 +703,7 @@ client.on('interactionCreate', async interaction => {
         if (interaction.customId === 'sair') {
             dados.inscritos.forEach((l, k) => dados.inscritos.set(k, l.filter(id => id !== userId)));
         } else if (interaction.customId === 'reset') {
-            if (!interaction.member.permissions.has('Administrator')) return interaction.reply({ content: 'Apenas administradores podem resetar.', ephemeral: true });
+            if (!interaction.member.permissions.has('Administrator')) return interaction.editReply({ content: 'Apenas administradores podem resetar.', ephemeral: true });
             dados.inscritos = new Map();
         } else {
             const classe = interaction.customId.replace('insc_', '');
@@ -711,7 +714,7 @@ client.on('interactionCreate', async interaction => {
                 });
 
                 if (totalAtual >= limiteMaximo) {
-                    return interaction.reply({ 
+                    return interaction.editReply({ 
                         content: `❌ Este grupo já atingiu o limite de **${limiteMaximo}** pessoas. Inscreva-se como **Reserva**!`, 
                         ephemeral: true 
                     });
@@ -722,8 +725,8 @@ client.on('interactionCreate', async interaction => {
             let jaInscrito = false;
             dados.inscritos.forEach(l => { if (l.includes(userId)) jaInscrito = true; });
 
-            if (jaInscrito) return interaction.reply({ content: 'Você já está em uma classe!', ephemeral: true });
-            if (lista.length >= CONFIG_INSTANCIAS[dados.tipoInstancia].classes[classe].limite) return interaction.reply({ content: 'Esta classe está cheia!', ephemeral: true });
+            if (jaInscrito) return interaction.editReply({ content: 'Você já está em uma classe!', ephemeral: true });
+            if (lista.length >= CONFIG_INSTANCIAS[dados.tipoInstancia].classes[classe].limite) return interaction.editReply({ content: 'Esta classe está cheia!', ephemeral: true });
 
             lista.push(userId);
             dados.inscritos.set(classe, lista);
