@@ -298,10 +298,10 @@ client.once('ready', async () => {
         },
         {
             name: 'adicionar',
-            description: 'Adiciona manualmente um usuário a uma classe',
+            description: 'Adiciona manualmente um membro a uma classe',
             options: [
-                { name: 'usuario', type: 6, description: 'Usuário a ser adicionado', required: true },
-                { name: 'classe', type: 3, description: 'Nome da classe', required: true }
+                { name: 'usuario', type: 6, description: 'Membro a ser adicionado', required: true },
+                { name: 'classe', type: 3, description: 'Escolha a classe', required: true, autocomplete: true }
             ]
         },
         {
@@ -329,19 +329,41 @@ client.on('interactionCreate', async interaction => {
     const userId = `<@${interaction.user.id}>`;
     const dados = await Instancia.findOne({ eventoId: canalId });
 
+    if (interaction.isAutocomplete()) {
+        if (interaction.commandName === 'adicionar') {
+            const canalId = interaction.channel.id;
+            const dados = await Instancia.findOne({ eventoId: canalId });
+
+            if (!dados || !CONFIG_INSTANCIAS[dados.tipoInstancia]) return interaction.respond([]);
+
+            const focusedValue = interaction.options.getFocused();
+            const classesDisponiveis = Object.keys(CONFIG_INSTANCIAS[dados.tipoInstancia].classes);
+
+            const filtradas = classesDisponiveis.filter(escolha => 
+                escolha.toLowerCase().includes(focusedValue.toLowerCase())
+            );
+
+            return interaction.respond(
+                filtradas.slice(0, 25).map(escolha => ({ name: escolha, value: escolha }))
+            );
+        }
+    }
+
+
     if (interaction.isChatInputCommand()) {
         let dados = await Instancia.findOne({ eventoId: canalId });
         if (interaction.commandName === 'painel') {
-            if (!dados) return interaction.reply({ content: '❌ Use `/criar` primeiro!', ephemeral: true });
+            await interaction.deferReply({ ephemeral: true });
+            if (!dados) return interaction.editReply({ content: '❌ Use `/criar` primeiro!', ephemeral: true });
 
             const isDono = interaction.user.id === dados.criadorId;
             const isAdm = interaction.member.permissions.has('Administrator');
 
             if (!isDono && !isAdm) {
-                return interaction.reply({ content: '❌ Apenas o Líder do Grupo ou ADMs podem gerar o painel.', ephemeral: true });
+                return interaction.editReply({ content: '❌ Apenas o Líder do Grupo ou ADMs podem gerar o painel.', ephemeral: true });
             }
 
-            await interaction.reply({ content: '🔄 Gerando painel de vagas...', ephemeral: true });
+            await interaction.editReply({ content: '🔄 Gerando painel de vagas...', ephemeral: true });
             await enviarPainelAtualizado(interaction.channel);
         }
 
@@ -389,8 +411,8 @@ client.on('interactionCreate', async interaction => {
             const timestamp = Math.floor(novaData.getTime() / 1000);
             const msgAnuncio = await interaction.channel.send(
                 `📢 **A instância ${CONFIG_INSTANCIAS[dados.tipoInstancia].nome} foi MARCADA!**\n` +
-                `📅 **Início:** <t:${timestamp}:F>\n` +
-                `⚠️ <@&1100422246998233199>, inscrevam-se!`
+                `📅 **Início:** <t:${timestamp}:F>\n` //+
+                //`⚠️ <@&1100422246998233199>, inscrevam-se!`
             );
 
             dados.ultimaDataMsgId = msgAnuncio.id;
@@ -495,60 +517,63 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.commandName === 'adicionar') {
-            if (!dados) return interaction.reply({ content: '❌ Nenhuma instância ativa neste tópico.', ephemeral: true });
+            await interaction.deferReply({ ephemeral: true });
+
+            const canalId = interaction.channel.id;
+            const dados = await Instancia.findOne({ eventoId: canalId });
+
+            if (!dados) {
+                return interaction.editReply({ content: '❌ Nenhuma instância ativa neste tópico.' });
+            }
 
             const isDono = interaction.user.id === dados.criadorId;
             const isAdm = interaction.member.permissions.has('Administrator');
 
             if (!isDono && !isAdm) {
-                return interaction.reply({ 
-                    content: '❌ Apenas o **Líder do Grupo** que criou este tópico ou um **ADM** podem adicionar membros manualmente.', 
-                    ephemeral: true 
+                return interaction.editReply({ 
+                    content: '❌ Apenas o **Líder do Grupo** que criou este tópico ou um **ADM** podem adicionar membros manualmente.'
                 });
             }
-            
+
             const targetUser = interaction.options.getUser('usuario');
             const targetId = `<@${targetUser.id}>`;
-            let classeDigitada = interaction.options.getString('classe').trim();
-            let classeFormatada = classeDigitada.charAt(0).toUpperCase() + classeDigitada.slice(1).toLowerCase();
             
-            if (classeDigitada.length <= 2) {
-                classeFormatada = classeDigitada.toUpperCase();
-            }
-            // Casos específicos manuais se necessário (ex: Bragi) APENAS UM EXEMPLO PODE SER DESATIVADO
-            if (classeFormatada === 'Bragi') classeFormatada = 'Bragi'; 
-
-            if (!dados) return interaction.reply({ content: '❌ Use /criar primeiro!', ephemeral: true });
-
+            const classeEscolhida = interaction.options.getString('classe');
             const infoInstancia = CONFIG_INSTANCIAS[dados.tipoInstancia];
-            if (!infoInstancia.classes[classeFormatada]) {
-                return interaction.reply({ 
-                    content: `❌ a classe **${classeFormatada}** não existe na configuração de ${infoInstancia.nome}.`, 
-                    ephemeral: true 
+            if (!infoInstancia.classes[classeEscolhida]) {
+                return interaction.editReply({ 
+                    content: `❌ A classe **${classeEscolhida}** não existe na configuração de ${infoInstancia.nome}.`
                 });
             }
 
-            const lista = dados.inscritos.get(classeFormatada) || [];
+            const lista = dados.inscritos.get(classeEscolhida) || [];
             
             let jaInscrito = false;
             dados.inscritos.forEach(l => { if (l.includes(targetId)) jaInscrito = true; });
-            if (jaInscrito) return interaction.reply({ content: '❌ Este usuário já está inscrito em uma classe!', ephemeral: true });
 
-            if (lista.length >= infoInstancia.classes[classeFormatada].limite) {
-                return interaction.reply({ content: '❌ Esta classe já está cheia!', ephemeral: true });
+            if (jaInscrito) {
+                return interaction.editReply({ content: '❌ Este usuário já está inscrito em uma classe!' });
+            }
+
+            if (lista.length >= infoInstancia.classes[classeEscolhida].limite) {
+                return interaction.editReply({ content: '❌ Esta classe já está cheia!' });
             }
 
             lista.push(targetId);
-            dados.inscritos.set(classeFormatada, lista);
+            dados.inscritos.set(classeEscolhida, lista);
+            
             await dados.save();
-            await interaction.reply({ content: `✅ ${targetUser.username} adicionado como **${classeFormatada}**!`, ephemeral: true });
+
+            await interaction.editReply({ content: `✅ ${targetUser.username} adicionado como **${classeEscolhida}**!` });
+            
             await enviarPainelAtualizado(interaction.channel);
         }
 
         if (interaction.commandName === 'remover') {
-            if (!dados) return interaction.reply({ content: '❌ Nenhuma instância ativa neste tópico.', ephemeral: true });
+            await interaction.deferReply({ ephemeral: true });
+            if (!dados) return interaction.editReply({ content: '❌ Nenhuma instância ativa neste tópico.', ephemeral: true });
             if (interaction.user.id !== dados.criadorId && !interaction.member.permissions.has('Administrator')) {
-                return interaction.reply({ content: '❌ Apenas o Líder ou ADMs podem remover membros manualmente.', ephemeral: true });
+                return interaction.editReply({ content: '❌ Apenas o Líder ou ADMs podem remover membros manualmente.', ephemeral: true });
             }
             
             const targetUser = interaction.options.getUser('usuario');
@@ -564,11 +589,11 @@ client.on('interactionCreate', async interaction => {
             });
 
             if (!removido) {
-                return interaction.reply({ content: `❌ O usuário ${targetUser.username} não foi encontrado em nenhuma vaga.`, ephemeral: true });
+                return interaction.editReply({ content: `❌ O usuário ${targetUser.username} não foi encontrado em nenhuma vaga.`, ephemeral: true });
             }
 
             await dados.save();
-            await interaction.reply({ content: `✅ ${targetUser.username} foi removido da instância com sucesso!`, ephemeral: true });
+            await interaction.editReply({ content: `✅ ${targetUser.username} foi removido da instância com sucesso!`, ephemeral: true });
             await enviarPainelAtualizado(interaction.channel);
         }
 
@@ -617,17 +642,18 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.commandName === 'lider') {
+            await interaction.deferReply({ ephemeral: true });
             const canalId = interaction.channel.id;
             const dados = await Instancia.findOne({ eventoId: canalId });
             if (!dados) {
-                return interaction.reply({ content: '❌ Não há uma instância ativa neste tópico.', ephemeral: true });
+                return interaction.editReply({ content: '❌ Não há uma instância ativa neste tópico.', ephemeral: true });
             }
 
             const ehAdmin = interaction.member.permissions.has('Administrator');
             const ehLiderAtual = interaction.user.id === dados.criadorId;
 
             if (!ehAdmin && !ehLiderAtual) {
-                return interaction.reply({ 
+                return interaction.editReply({ 
                     content: '❌ Apenas o Líder do Grupo ou um Administrador podem transferir a liderança.', 
                     ephemeral: true 
                 });
@@ -636,16 +662,16 @@ client.on('interactionCreate', async interaction => {
             const novoLider = interaction.options.getUser('usuario');
 
             if (novoLider.id === dados.criadorId) {
-                return interaction.reply({ content: '❌ Este usuário já é o líder atual.', ephemeral: true });
+                return interaction.editReply({ content: '❌ Este usuário já é o líder atual.', ephemeral: true });
             }
             if (novoLider.bot) {
-                return interaction.reply({ content: '❌ Você não pode transferir a liderança para um bot.', ephemeral: true });
+                return interaction.editReply({ content: '❌ Você não pode transferir a liderança para um bot.', ephemeral: true });
             }
 
             dados.criadorId = novoLider.id;
             await dados.save();
 
-            await interaction.reply({ 
+            await interaction.editReply({ 
                 content: `👑 **Transferência de Liderança**\nO usuário <@${interaction.user.id}> passou o comando do grupo para **${novoLider.username}**!` 
             });
 
