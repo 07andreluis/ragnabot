@@ -247,6 +247,22 @@ function gerarBotoes(tipo) {
 client.once('ready', async () => {
     console.log(`🚀 Bot online como ${client.user.tag}`);
 
+    try {
+        const todasInstancias = await Instancia.find({});
+        console.log(`🔍 Verificando ${todasInstancias.length} instâncias no banco...`);
+
+        for (const ins of todasInstancias) {
+            const existe = await client.channels.fetch(ins.eventoId).catch(() => null);
+
+            if (!existe) {
+                await Instancia.deleteOne({ _id: ins._id });
+                console.log(`🧹 [LIMPEZA] Removida instância fantasma: ${ins.tipoInstancia} (ID: ${ins.eventoId})`);
+            }
+        }
+    } catch (err) {
+        console.error("❌ Erro durante a faxina inicial:", err);
+    }
+
     const comandos = [
         {
             name: 'painel',
@@ -733,6 +749,28 @@ client.on('interactionCreate', async interaction => {
         }
         await dados.save();
         await interaction.update({ embeds: [await gerarEmbed(canalId)] });
+    }
+});
+
+client.on('threadDelete', async (thread) => {
+    try {
+        const deletado = await Instancia.findOneAndDelete({ eventoId: thread.id });
+        if (deletado) {
+            console.log(`🗑️ Tópico "${thread.name}" foi excluído. Dados da instância removidos do MongoDB.`);
+        }
+    } catch (error) {
+        console.error('❌ Erro ao processar exclusão de tópico:', error);
+    }
+});
+
+client.on('channelDelete', async (channel) => {
+    try {
+        const deletado = await Instancia.findOneAndDelete({ eventoId: channel.id });
+        if (deletado) {
+            console.log(`🗑️ Canal "${channel.name}" foi excluído. Dados limpos.`);
+        }
+    } catch (error) {
+        console.error('❌ Erro ao processar exclusão de canal:', error);
     }
 });
 
