@@ -710,45 +710,62 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (interaction.isButton()) {
-        await interaction.deferReply({ ephemeral: true });
-        const dados = await Instancia.findOne({ eventoId: canalId });
-        if (!dados) return;
-        const tipoTecnico = dados.tipoInstancia?dados.tipoInstancia.toLowerCase():'et';
-        const infoInstancia = CONFIG_INSTANCIAS[tipoTecnico];
-        const limiteMaximo = infoInstancia?.limiteGrupo || 12;
-        if (interaction.customId === 'sair') {
-            dados.inscritos.forEach((l, k) => dados.inscritos.set(k, l.filter(id => id !== userId)));
-        } else if (interaction.customId === 'reset') {
-            if (!interaction.member.permissions.has('Administrator')) return interaction.editReply({ content: 'Apenas administradores podem resetar.', ephemeral: true });
-            dados.inscritos = new Map();
-        } else {
-            const classe = interaction.customId.replace('insc_', '');
-            if (classe !== 'Reserva') {
-                let totalAtual = 0;
-                dados.inscritos.forEach((lista, nomeClasse) => {
-                    if (nomeClasse !== 'Reserva') totalAtual += lista.length;
-                });
+        try {
+            const dados = await Instancia.findOne({ eventoId: canalId });
+            if (!dados) return;
 
-                if (totalAtual >= limiteMaximo) {
-                    return interaction.editReply({ 
-                        content: `❌ Este grupo já atingiu o limite de **${limiteMaximo}** pessoas. Inscreva-se como **Reserva**!`, 
-                        ephemeral: true 
-                    });
+            const tipoTecnico = dados.tipoInstancia ? dados.tipoInstancia.toLowerCase() : 'et';
+            const infoInstancia = CONFIG_INSTANCIAS[tipoTecnico];
+            const limiteMaximo = infoInstancia?.limiteGrupo || 12;
+
+            if (interaction.customId === 'sair') {
+                dados.inscritos.forEach((l, k) => dados.inscritos.set(k, l.filter(id => id !== userId)));
+            } else if (interaction.customId === 'reset') {
+                if (!interaction.member.permissions.has('Administrator')) {
+                    return interaction.reply({ content: 'Apenas administradores podem resetar.', ephemeral: true });
                 }
+                dados.inscritos = new Map();
+            } else {
+                const classe = interaction.customId.replace('insc_', '');
+                
+                if (classe !== 'Reserva') {
+                    let totalAtual = 0;
+                    dados.inscritos.forEach((lista, nomeClasse) => {
+                        if (nomeClasse !== 'Reserva') totalAtual += lista.length;
+                    });
+
+                    if (totalAtual >= limiteMaximo) {
+                        return interaction.reply({ 
+                            content: `❌ Este grupo já atingiu o limite de **${limiteMaximo}** pessoas. Inscreva-se como **Reserva**!`, 
+                            ephemeral: true 
+                        });
+                    }
+                }
+                
+                const lista = dados.inscritos.get(classe) || [];
+                let jaInscrito = false;
+                dados.inscritos.forEach(l => { if (l.includes(userId)) jaInscrito = true; });
+
+                if (jaInscrito) return interaction.reply({ content: 'Você já está em uma classe!', ephemeral: true });
+                
+                if (lista.length >= infoInstancia.classes[classe].limite) {
+                    return interaction.reply({ content: 'Esta classe está cheia!', ephemeral: true });
+                }
+
+                lista.push(userId);
+                dados.inscritos.set(classe, lista);
             }
+
+            await dados.save();
             
-            const lista = dados.inscritos.get(classe) || [];
-            let jaInscrito = false;
-            dados.inscritos.forEach(l => { if (l.includes(userId)) jaInscrito = true; });
+            await interaction.update({ 
+                embeds: [await gerarEmbed(canalId)] 
+            });
 
-            if (jaInscrito) return interaction.editReply({ content: 'Você já está em uma classe!', ephemeral: true });
-            if (lista.length >= CONFIG_INSTANCIAS[dados.tipoInstancia].classes[classe].limite) return interaction.editReply({ content: 'Esta classe está cheia!', ephemeral: true });
-
-            lista.push(userId);
-            dados.inscritos.set(classe, lista);
+        } catch (error) {
+            if (error.code === 10062 || error.code === 40060) return;
+            console.error('Erro ao processar botão:', error);
         }
-        await dados.save();
-        await interaction.update({ embeds: [await gerarEmbed(canalId)] });
     }
 });
 
