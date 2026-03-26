@@ -120,17 +120,6 @@ function calcularContagem(dataEvento) {
     return `📌 **Início:** <t:${timestampUnix}:F>\n⏳ **Contagem:** <t:${timestampUnix}:R>`;
 }
 
-async function enviarPainelAtualizado(channel) {
-    const dados = await Instancia.findOne({ eventoId: channel.id });
-    if (!dados) return;
-    if (dados?.ultimaMensagemId) {
-        try { await (await channel.messages.fetch(dados.ultimaMensagemId)).delete(); } catch {}
-    }
-    const msg = await channel.send({ embeds: [await gerarEmbed(channel.id)], components: gerarBotoes(dados.tipoInstancia) });
-    dados.ultimaMensagemId = msg.id;
-    await dados.save();
-}
-
 async function verificarAlertas() {
     const agora = new Date();
     const eventos = await Instancia.find({ dataEvento: { $ne: null } });
@@ -870,18 +859,58 @@ client.on('interactionCreate', async interaction => {
             const infoInstancia = CONFIG_INSTANCIAS[tipoTecnico];
             const limiteMaximo = infoInstancia?.limiteGrupo || 12;
 
-            if (interaction.customId === 'sair') {
-                dados.inscritos.forEach((l, k) => {
-                    dados.inscritos.set(k, l.filter(id => id !== userId));
-                });
-            } else if (interaction.customId === 'reset') {
+            if (interaction.customId === 'reset') {
                 if (!interaction.member.permissions.has('Administrator')) {
                     return interaction.reply({ 
                         content: '❌ Apenas administradores podem resetar o grupo.', 
                         flags: [MessageFlags.Ephemeral] 
                     });
                 }
+
+                const rowConfirm = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('confirmar_reset_total')
+                        .setLabel('SIM, LIMPAR TUDO')
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId('cancelar_reset')
+                        .setLabel('CANCELAR')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+
+                return interaction.reply({ 
+                    content: '⚠️ **VOCÊ TEM CERTEZA?** Isso removerá todos os inscritos e reservas desta instância.', 
+                    components: [rowConfirm],
+                    flags: [MessageFlags.Ephemeral] 
+                });
+            }
+
+            if (interaction.customId === 'confirmar_reset_total') {
                 dados.inscritos = new Map();
+                await dados.save();
+
+                const embedAtualizado = await gerarEmbed(canalId);
+                const msgPainel = await interaction.channel.messages.fetch(dados.painelId).catch(() => null);
+                
+                if (msgPainel) {
+                    await msgPainel.edit({ embeds: [embedAtualizado], components: gerarBotoes(tipoTecnico) });
+                }
+
+                return interaction.update({ 
+                    content: '✅ Grupo resetado com sucesso!', 
+                    components: [], 
+                    flags: [MessageFlags.Ephemeral] 
+                });
+            }
+
+            if (interaction.customId === 'cancelar_reset') {
+                return interaction.update({ content: '❌ Reset cancelado.', components: [], flags: [MessageFlags.Ephemeral] });
+            }
+
+            if (interaction.customId === 'sair') {
+                dados.inscritos.forEach((l, k) => {
+                    dados.inscritos.set(k, l.filter(id => id !== userId));
+                });
             } else {
                 const classe = interaction.customId.replace('insc_', '');
                 
@@ -893,7 +922,7 @@ client.on('interactionCreate', async interaction => {
 
                     if (totalAtual >= limiteMaximo) {
                         return interaction.reply({ 
-                            content: `❌ Este grupo já atingiu o limite de **${limiteMaximo}** pessoas. Inscreva-se como **Reserva**!`, 
+                            content: `❌ Este grupo já atingiu o limite de **${limiteMaximo}** pessoas.`, 
                             flags: [MessageFlags.Ephemeral] 
                         });
                     }
@@ -904,17 +933,11 @@ client.on('interactionCreate', async interaction => {
                 dados.inscritos.forEach(l => { if (l.includes(userId)) jaInscrito = true; });
 
                 if (jaInscrito) {
-                    return interaction.reply({ 
-                        content: '❌ Você já está inscrito em uma classe!', 
-                        flags: [MessageFlags.Ephemeral] 
-                    });
+                    return interaction.reply({ content: '❌ Você já está inscrito!', flags: [MessageFlags.Ephemeral] });
                 }
                 
                 if (lista.length >= infoInstancia.classes[classe].limite) {
-                    return interaction.reply({ 
-                        content: '❌ Esta classe já está cheia!', 
-                        flags: [MessageFlags.Ephemeral] 
-                    });
+                    return interaction.reply({ content: '❌ Classe cheia!', flags: [MessageFlags.Ephemeral] });
                 }
 
                 lista.push(userId);
