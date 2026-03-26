@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { Client, GatewayIntentBits, ActivityType, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const mongoose = require('mongoose');
 const http = require('http');
 
@@ -249,6 +249,14 @@ client.once('clientReady', async () => {
     } catch (err) {
         console.error("❌ Erro durante a faxina inicial:", err);
     }
+
+    client.user.setPresence({
+        activities: [{ 
+            name: '/ajuda para instruções', 
+            type: ActivityType.Playing
+        }],
+        status: 'online',
+    });
 
     const comandos = [
         {
