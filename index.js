@@ -1,9 +1,8 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, User } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const mongoose = require('mongoose');
 const http = require('http');
 
-// --- SERVIDOR PARA RECEBER O CRON-JOB ---
 http.createServer(async (_, res) => {
     try {
         await verificarAlertas();
@@ -19,15 +18,14 @@ http.createServer(async (_, res) => {
     console.log("Servidor de monitoramento rodando na porta 3000");
 });
 
-// Conexão com o MongoDB
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('✅ Conectado ao MongoDB com sucesso!'))
     .catch(err => console.error('❌ Erro ao conectar ao MongoDB:', err));
 
-// Esquema do Banco de Dados
 const InstanciaSchema = new mongoose.Schema({
     eventoId: { type: String, required: true },
     criadorId: String,
+    painelId: String,
     tipoInstancia: { type: String, default: 'et' },
     dataEvento: { type: Date, default: null },
     alertasEnviados: { type: [String], default: [] },
@@ -244,7 +242,7 @@ function gerarBotoes(tipo) {
     return rows;
 }
 
-client.once('ready', async () => {
+client.once('clientReady', async () => {
     console.log(`🚀 Bot online como ${client.user.tag}`);
 
     try {
@@ -368,23 +366,67 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.isChatInputCommand()) {
         let dados = await Instancia.findOne({ eventoId: canalId });
+        
         if (interaction.commandName === 'painel') {
-            await interaction.deferReply({ ephemeral: true });
-            if (!dados) return interaction.editReply({ content: '❌ Use `/criar` primeiro!', ephemeral: true });
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+            
+            const canalId = interaction.channel.id;
+            const dados = await Instancia.findOne({ eventoId: canalId });
+
+            if (!dados) {
+                return interaction.editReply({ 
+                    content: '❌ Use `/criar` primeiro neste tópico!', 
+                    flags: [MessageFlags.Ephemeral] 
+                });
+            }
 
             const isDono = interaction.user.id === dados.criadorId;
             const isAdm = interaction.member.permissions.has('Administrator');
 
             if (!isDono && !isAdm) {
-                return interaction.editReply({ content: '❌ Apenas o Líder do Grupo ou ADMs podem gerar o painel.', ephemeral: true });
+                return interaction.editReply({ 
+                    content: '❌ Apenas o Líder do Grupo ou ADMs podem gerar o painel.', 
+                    flags: [MessageFlags.Ephemeral] 
+                });
             }
 
-            await interaction.editReply({ content: '🔄 Gerando painel de vagas...', ephemeral: true });
-            await enviarPainelAtualizado(interaction.channel);
+            try {
+                if (dados.painelId) {
+                    const msgAntiga = await interaction.channel.messages.fetch(dados.painelId).catch(() => null);
+                    if (msgAntiga) {
+                        await msgAntiga.delete().catch(() => null);
+                    }
+                }
+            } catch (err) {
+                console.warn("⚠️ Não foi possível deletar o painel anterior, prosseguindo...");
+            }
+
+            try {
+                const embedAtualizado = await gerarEmbed(canalId);
+                const novoPainel = await interaction.channel.send({ 
+                    embeds: [embedAtualizado], 
+                    components: gerarBotoes(dados.tipoInstancia) 
+                });
+
+                dados.painelId = novoPainel.id;
+                await dados.save();
+
+                await interaction.editReply({ 
+                    content: '✅ Novo painel gerado e vinculado para futuras atualizações!', 
+                    flags: [MessageFlags.Ephemeral] 
+                });
+
+            } catch (err) {
+                console.error("❌ Erro ao gerar novo painel:", err.message);
+                await interaction.editReply({ 
+                    content: '❌ Erro ao gerar o painel no chat.', 
+                    flags: [MessageFlags.Ephemeral] 
+                });
+            }
         }
 
         if (interaction.commandName === 'data') {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
             const canalId = interaction.channel.id;
             const entrada = interaction.options.getString('quando');
             const formatoValido = /^(\d{2})\/(\d{2})\s(\d{2}):(\d{2})$/;
@@ -394,7 +436,7 @@ client.on('interactionCreate', async interaction => {
             if (!match) {
                 return interaction.editReply({ 
                     content: '❌ Formato inválido! Use: **DD/MM HH:MM** (Ex: 05/04 19:30)', 
-                    ephemeral: true 
+                    flags: [MessageFlags.Ephemeral] 
                 });
             }
 
@@ -404,13 +446,13 @@ client.on('interactionCreate', async interaction => {
             const novaData = new Date(dataString);
 
             if (isNaN(novaData.getTime())) {
-                return interaction.editReply({ content: '❌ Data ou hora numericamente inválida!', ephemeral: true });
+                return interaction.editReply({ content: '❌ Data ou hora numericamente inválida!', flags: [MessageFlags.Ephemeral] });
             }
 
-            if (!dados) return interaction.editReply({ content: '❌ Instância não encontrada.', ephemeral: true });
+            if (!dados) return interaction.editReply({ content: '❌ Instância não encontrada.', flags: [MessageFlags.Ephemeral] });
             
             if (interaction.user.id !== dados.criadorId && !interaction.member.permissions.has('Administrator')) {
-                return interaction.editReply({ content: '❌ Sem permissão para alterar a data.', ephemeral: true });
+                return interaction.editReply({ content: '❌ Sem permissão para alterar a data.', flags: [MessageFlags.Ephemeral] });
             }
 
             if (dados.ultimaDataMsgId) {
@@ -427,19 +469,37 @@ client.on('interactionCreate', async interaction => {
             const timestamp = Math.floor(novaData.getTime() / 1000);
             const msgAnuncio = await interaction.channel.send(
                 `📢 **A instância ${CONFIG_INSTANCIAS[dados.tipoInstancia].nome} foi MARCADA!**\n` +
-                `📅 **Início:** <t:${timestamp}:F>\n` +
-                `⚠️ <@&1100422246998233199>, inscrevam-se!`
+                `📅 **Início:** <t:${timestamp}:F>\n` //+
+                //`⚠️ <@&1100422246998233199>, inscrevam-se!`
             );
 
             dados.ultimaDataMsgId = msgAnuncio.id;
             await dados.save();
 
-            await interaction.editReply({ content: '✅ Horário atualizado com sucesso!', ephemeral: true });
-            await enviarPainelAtualizado(interaction.channel);
+            await interaction.editReply({ content: '✅ Horário atualizado com sucesso!', flags: [MessageFlags.Ephemeral] });
+            try {
+                const embedAtualizado = await gerarEmbed(canalId);
+                
+                if (dados.painelId) {
+                    const msgExistente = await interaction.channel.messages.fetch(dados.painelId).catch(() => null);
+                    if (msgExistente) {
+                        await msgExistente.edit({ embeds: [embedAtualizado] });
+                    } else {
+                        const novaMsg = await interaction.channel.send({ embeds: [embedAtualizado], components: gerarBotoes(dados.tipoInstancia) });
+                        dados.painelId = novaMsg.id;
+                    }
+                } else {
+                    const novaMsg = await interaction.channel.send({ embeds: [embedAtualizado], components: gerarBotoes(dados.tipoInstancia) });
+                    dados.painelId = novaMsg.id;
+                }
+                await dados.save();
+            } catch (err) {
+                console.error("Erro ao gerenciar painelId no /data:", err);
+            }
         }
 
         if (interaction.commandName === 'criar') {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
             const tipoSelecionado = interaction.options.getString('instancia');
             const titulo = interaction.options.getString('titulo');
             
@@ -463,7 +523,7 @@ client.on('interactionCreate', async interaction => {
                 await topico.members.add(interaction.user.id);
                 await interaction.editReply({ 
                     content: `✅ Tópico **${titulo}** criado com sucesso! <#${topico.id}>`, 
-                    ephemeral: true 
+                    flags: [MessageFlags.Ephemeral] 
                 });
 
                 await topico.send({ 
@@ -472,13 +532,13 @@ client.on('interactionCreate', async interaction => {
 
             } catch (error) {
                 console.error('Erro ao criar tópico:', error);
-                await interaction.editReply({ content: '❌ Erro ao criar o tópico. Verifique minhas permissões!', ephemeral: true });
+                await interaction.editReply({ content: '❌ Erro ao criar o tópico. Verifique minhas permissões!', flags: [MessageFlags.Ephemeral] });
             }
         }
 
         if (interaction.commandName === 'checklist') {
-            await interaction.deferReply({ ephemeral: true });
-            if (!dados) return interaction.editReply({ content: '❌ Instância não configurada. Use /criar primeiro.', ephemeral: true });
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+            if (!dados) return interaction.editReply({ content: '❌ Instância não configurada. Use /criar primeiro.', flags: [MessageFlags.Ephemeral] });
             const embed = new EmbedBuilder();
             if (dados.tipoInstancia === 'et') {
                 embed.setTitle('🎒 Checklist de Suprimentos - Torre Sem Fim')
@@ -534,7 +594,7 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.commandName === 'adicionar') {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
             const canalId = interaction.channel.id;
             const dados = await Instancia.findOne({ eventoId: canalId });
@@ -564,7 +624,6 @@ client.on('interactionCreate', async interaction => {
             }
 
             const lista = dados.inscritos.get(classeEscolhida) || [];
-            
             let jaInscrito = false;
             dados.inscritos.forEach(l => { if (l.includes(targetId)) jaInscrito = true; });
 
@@ -578,19 +637,56 @@ client.on('interactionCreate', async interaction => {
 
             lista.push(targetId);
             dados.inscritos.set(classeEscolhida, lista);
-            
             await dados.save();
 
             await interaction.editReply({ content: `✅ ${targetUser.username} adicionado como **${classeEscolhida}**!` });
             
-            await enviarPainelAtualizado(interaction.channel);
+            try {
+                const embedAtualizado = await gerarEmbed(canalId);
+                
+                if (dados.painelId) {
+                    const msgPainel = await interaction.channel.messages.fetch(dados.painelId).catch(() => null);
+                    if (msgPainel) {
+                        await msgPainel.edit({ embeds: [embedAtualizado] });
+                        return;
+                    }
+                }
+
+                const novaMsg = await interaction.channel.send({ 
+                    embeds: [embedAtualizado], 
+                    components: gerarBotoes(dados.tipoInstancia) 
+                });
+                dados.painelId = novaMsg.id;
+                await dados.save();
+
+            } catch (err) {
+                if (err.code !== 10062 && err.code !== 40060) {
+                    console.error("Erro ao atualizar painel no /adicionar:", err);
+                }
+            }
         }
 
         if (interaction.commandName === 'remover') {
-            await interaction.deferReply({ ephemeral: true });
-            if (!dados) return interaction.editReply({ content: '❌ Nenhuma instância ativa neste tópico.', ephemeral: true });
-            if (interaction.user.id !== dados.criadorId && !interaction.member.permissions.has('Administrator')) {
-                return interaction.editReply({ content: '❌ Apenas o Líder ou ADMs podem remover membros manualmente.', ephemeral: true });
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+            const canalId = interaction.channel.id;
+            const dados = await Instancia.findOne({ eventoId: canalId });
+
+            if (!dados) {
+                return interaction.editReply({ 
+                    content: '❌ Nenhuma instância ativa neste tópico.', 
+                    flags: [MessageFlags.Ephemeral] 
+                });
+            }
+
+            const isDono = interaction.user.id === dados.criadorId;
+            const isAdm = interaction.member.permissions.has('Administrator');
+
+            if (!isDono && !isAdm) {
+                return interaction.editReply({ 
+                    content: '❌ Apenas o Líder do Grupo ou um Administrador podem remover membros manualmente.', 
+                    flags: [MessageFlags.Ephemeral] 
+                });
             }
             
             const targetUser = interaction.options.getUser('usuario');
@@ -606,16 +702,48 @@ client.on('interactionCreate', async interaction => {
             });
 
             if (!removido) {
-                return interaction.editReply({ content: `❌ O usuário ${targetUser.username} não foi encontrado em nenhuma vaga.`, ephemeral: true });
+                return interaction.editReply({ 
+                    content: `❌ O usuário **${targetUser.username}** não foi encontrado em nenhuma vaga.`, 
+                    flags: [MessageFlags.Ephemeral] 
+                });
             }
 
             await dados.save();
-            await interaction.editReply({ content: `✅ ${targetUser.username} foi removido da instância com sucesso!`, ephemeral: true });
-            await enviarPainelAtualizado(interaction.channel);
+
+            await interaction.editReply({ 
+                content: `✅ **${targetUser.username}** foi removido da instância com sucesso!`, 
+                flags: [MessageFlags.Ephemeral] 
+            });
+
+            try {
+                const embedAtualizado = await gerarEmbed(canalId);
+                
+                if (dados.painelId) {
+                    const msgPainel = await interaction.channel.messages.fetch(dados.painelId).catch(() => null);
+                    
+                    if (msgPainel && typeof msgPainel.edit === 'function') {
+                        await msgPainel.edit({ embeds: [embedAtualizado] });
+                        return; 
+                    }
+                }
+
+                const novaMsg = await interaction.channel.send({ 
+                    embeds: [embedAtualizado], 
+                    components: gerarBotoes(dados.tipoInstancia) 
+                });
+                
+                dados.painelId = novaMsg.id;
+                await dados.save();
+
+            } catch (err) {
+                if (err.code !== 10062 && err.code !== 40060) {
+                    console.error("⚠️ Erro ao atualizar painel no /remover:", err.message);
+                }
+            }
         }
 
         if (interaction.commandName === 'ajuda') {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
             const embedAjuda = new EmbedBuilder()
                 .setTitle('📖 Guia de Operação - Organizador de Instâncias')
                 .setDescription('Siga o roteiro abaixo para organizar sua instância com eficiência:')
@@ -648,23 +776,28 @@ client.on('interactionCreate', async interaction => {
                     { 
                         name: '💡 Dicas de Ouro', 
                         value: '• Crie um **Tópico Novo** para cada instância para não misturar as listas.\n' +
-                            '• As cores do painel mudam: 🔵 (Longe), 🟡 (Faltam 2h), 🔴 (Atrasado).\n' +
+                            '• As cores da borda do painel mudam: 🟡 (Faltam 2h), 🔴 (Atrasado).\n' +
                             '• Use o comando **/checklist** logo após marcar a data para orientar o grupo.\n' +
                             '• O painel informa visualmente se o grupo tem vagas através de: 🔴 GRUPO CHEIO ou 🟢 VAGAS ABERTAS.\n' +
-                            '• O sistema de alertas avisa o grupo automaticamente 24h, 3h e 1h antes.'
+                            '• O sistema de alertas avisa o grupo automaticamente 24h e 1h antes da instância.'
                     }
                 )
                 .setFooter({ text: 'Sistema de Apoio ao Clã criado por André Luís' });
 
-            await interaction.editReply({ embeds: [embedAjuda], ephemeral: true });
+            await interaction.editReply({ embeds: [embedAjuda], flags: [MessageFlags.Ephemeral] });
         }
 
         if (interaction.commandName === 'lider') {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+            
             const canalId = interaction.channel.id;
             const dados = await Instancia.findOne({ eventoId: canalId });
+
             if (!dados) {
-                return interaction.editReply({ content: '❌ Não há uma instância ativa neste tópico.', ephemeral: true });
+                return interaction.editReply({ 
+                    content: '❌ Não há uma instância ativa neste tópico.', 
+                    flags: [MessageFlags.Ephemeral] 
+                });
             }
 
             const ehAdmin = interaction.member.permissions.has('Administrator');
@@ -673,38 +806,57 @@ client.on('interactionCreate', async interaction => {
             if (!ehAdmin && !ehLiderAtual) {
                 return interaction.editReply({ 
                     content: '❌ Apenas o Líder do Grupo ou um Administrador podem transferir a liderança.', 
-                    ephemeral: true 
+                    flags: [MessageFlags.Ephemeral] 
                 });
             }
 
             const novoLider = interaction.options.getUser('usuario');
 
             if (novoLider.id === dados.criadorId) {
-                return interaction.editReply({ content: '❌ Este usuário já é o líder atual.', ephemeral: true });
+                return interaction.editReply({ 
+                    content: '❌ Este usuário já é o líder atual.', 
+                    flags: [MessageFlags.Ephemeral] 
+                });
             }
+
             if (novoLider.bot) {
-                return interaction.editReply({ content: '❌ Você não pode transferir a liderança para um bot.', ephemeral: true });
+                return interaction.editReply({ 
+                    content: '❌ Você não pode transferir a liderança para um bot.', 
+                    flags: [MessageFlags.Ephemeral] 
+                });
             }
 
             dados.criadorId = novoLider.id;
             await dados.save();
 
             await interaction.editReply({ 
-                content: `👑 **Transferência de Liderança**\nO usuário <@${interaction.user.id}> passou o comando do grupo para **${novoLider.username}**!` 
+                content: `👑 **Mudança de Liderança**\n**${novoLider.username}** agora está no comando do grupo!` 
             });
 
             try {
                 const embedAtualizado = await gerarEmbed(canalId);
-                const canalOriginal = await client.channels.fetch(interaction.channel.parentId);
                 
-                if (canalOriginal) {
-                    const msgPainel = await canalOriginal.messages.fetch(dados.painelId);
+                if (dados.painelId) {
+                    const msgPainel = await interaction.channel.messages.fetch(dados.painelId).catch(() => null);
+                    
                     if (msgPainel && typeof msgPainel.edit === 'function') {
                         await msgPainel.edit({ embeds: [embedAtualizado] });
+                        return; 
                     }
                 }
+
+                const novoPainel = await interaction.channel.send({ 
+                    embeds: [embedAtualizado], 
+                    components: gerarBotoes(dados.tipoInstancia) 
+                });
+                
+                dados.painelId = novoPainel.id;
+                await dados.save();
+                
             } catch (err) {
-                console.error("⚠️ Erro ao atualizar painel após troca de líder:", err.message);
+                if (err.code !== 10062 && err.code !== 40060) {
+                    console.error("⚠️ Erro ao processar painel após troca de líder:", err.message);
+                }
             }
         }
     }
@@ -719,10 +871,15 @@ client.on('interactionCreate', async interaction => {
             const limiteMaximo = infoInstancia?.limiteGrupo || 12;
 
             if (interaction.customId === 'sair') {
-                dados.inscritos.forEach((l, k) => dados.inscritos.set(k, l.filter(id => id !== userId)));
+                dados.inscritos.forEach((l, k) => {
+                    dados.inscritos.set(k, l.filter(id => id !== userId));
+                });
             } else if (interaction.customId === 'reset') {
                 if (!interaction.member.permissions.has('Administrator')) {
-                    return interaction.reply({ content: 'Apenas administradores podem resetar.', ephemeral: true });
+                    return interaction.reply({ 
+                        content: '❌ Apenas administradores podem resetar o grupo.', 
+                        flags: [MessageFlags.Ephemeral] 
+                    });
                 }
                 dados.inscritos = new Map();
             } else {
@@ -737,7 +894,7 @@ client.on('interactionCreate', async interaction => {
                     if (totalAtual >= limiteMaximo) {
                         return interaction.reply({ 
                             content: `❌ Este grupo já atingiu o limite de **${limiteMaximo}** pessoas. Inscreva-se como **Reserva**!`, 
-                            ephemeral: true 
+                            flags: [MessageFlags.Ephemeral] 
                         });
                     }
                 }
@@ -746,10 +903,18 @@ client.on('interactionCreate', async interaction => {
                 let jaInscrito = false;
                 dados.inscritos.forEach(l => { if (l.includes(userId)) jaInscrito = true; });
 
-                if (jaInscrito) return interaction.reply({ content: 'Você já está em uma classe!', ephemeral: true });
+                if (jaInscrito) {
+                    return interaction.reply({ 
+                        content: '❌ Você já está inscrito em uma classe!', 
+                        flags: [MessageFlags.Ephemeral] 
+                    });
+                }
                 
                 if (lista.length >= infoInstancia.classes[classe].limite) {
-                    return interaction.reply({ content: 'Esta classe está cheia!', ephemeral: true });
+                    return interaction.reply({ 
+                        content: '❌ Esta classe já está cheia!', 
+                        flags: [MessageFlags.Ephemeral] 
+                    });
                 }
 
                 lista.push(userId);
@@ -759,12 +924,13 @@ client.on('interactionCreate', async interaction => {
             await dados.save();
             
             await interaction.update({ 
-                embeds: [await gerarEmbed(canalId)] 
+                embeds: [await gerarEmbed(canalId)],
+                components: gerarBotoes(tipoTecnico)
             });
 
         } catch (error) {
             if (error.code === 10062 || error.code === 40060) return;
-            console.error('Erro ao processar botão:', error);
+            console.error('⚠️ Erro ao processar clique no botão:', error);
         }
     }
 });
