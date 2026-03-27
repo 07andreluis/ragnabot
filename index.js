@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, ActivityType, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { Client, GatewayIntentBits, ActivityType, StringSelectMenuBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const mongoose = require('mongoose');
 const http = require('http');
 
@@ -191,17 +191,35 @@ async function gerarEmbed(idDoCanal) {
         .setFooter({ text: `ID: ${idDoCanal} | Líder do Grupo: ${nomeLider}` });
 
     for (const [classe, info] of Object.entries(infoInstancia.classes)) {
-        const listaIds = dados.inscritos.get(classe) || [];
-        const listaNomes = listaIds.length > 0 ? listaIds.join('\n') : '*Vazio*';
+        const listaBruta = dados.inscritos.get(classe) || [];
         const isReserva = classe === 'Reserva';
         
+        let listaNomes;
+        if (listaBruta.length > 0) {
+            listaNomes = listaBruta.map(item => {
+                if (isReserva && item.includes('|')) {
+                    const [id, classeDesejada] = item.split('|');
+                    const emojiClasse = infoInstancia.classes[classeDesejada]?.emoji || '❓';
+                    const idLimpo = id.replace(/[<@!>]/g, '');
+                    return `<@${idLimpo}> ${emojiClasse} **${classeDesejada}**`;
+                }
+                
+                const idLimpo = item.replace(/[<@!>]/g, '');
+                return `<@${idLimpo}>`;
+            }).join('\n');
+        } else {
+            listaNomes = '*Vazio*';
+        }
+        
         embed.addFields({ 
-            name: `${isReserva ? '⏳' : info.emoji} ${classe} (${listaIds.length}/${info.limite})`, 
+            name: `${isReserva ? '⏳' : info.emoji} ${classe} (${listaBruta.length}/${info.limite})`, 
             value: listaNomes, 
             inline: !isReserva 
         });
+
         if (isReserva) embed.addFields({ name: '\u200B', value: '━━━━━━━━━━━━', inline: false });
     }
+    
     return embed;
 }
 
@@ -337,14 +355,11 @@ client.once('clientReady', async () => {
 
 client.on('interactionCreate', async interaction => {
     const canalId = interaction.channel.id;
-    const userId = `<@${interaction.user.id}>`;
+    const userId = interaction.user.id;
     const dados = await Instancia.findOne({ eventoId: canalId });
 
     if (interaction.isAutocomplete()) {
         if (interaction.commandName === 'adicionar') {
-            const canalId = interaction.channel.id;
-            const dados = await Instancia.findOne({ eventoId: canalId });
-
             if (!dados || !CONFIG_INSTANCIAS[dados.tipoInstancia]) return interaction.respond([]);
 
             const focusedValue = interaction.options.getFocused();
@@ -360,15 +375,9 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-
     if (interaction.isChatInputCommand()) {
-        let dados = await Instancia.findOne({ eventoId: canalId });
-        
         if (interaction.commandName === 'painel') {
             await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-            
-            const canalId = interaction.channel.id;
-            const dados = await Instancia.findOne({ eventoId: canalId });
 
             if (!dados) {
                 return interaction.editReply({ 
@@ -424,11 +433,9 @@ client.on('interactionCreate', async interaction => {
 
         if (interaction.commandName === 'data') {
             await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-            const canalId = interaction.channel.id;
             const entrada = interaction.options.getString('quando');
             const formatoValido = /^(\d{2})\/(\d{2})\s(\d{2}):(\d{2})$/;
             const match = entrada.match(formatoValido);
-            const dados = await Instancia.findOne({ eventoId: canalId });
 
             if (!match) {
                 return interaction.editReply({ 
@@ -466,8 +473,8 @@ client.on('interactionCreate', async interaction => {
             const timestamp = Math.floor(novaData.getTime() / 1000);
             const msgAnuncio = await interaction.channel.send(
                 `📢 **A instância ${CONFIG_INSTANCIAS[dados.tipoInstancia].nome} foi MARCADA!**\n` +
-                `📅 **Início:** <t:${timestamp}:F>\n` //+
-                //`⚠️ <@&1100422246998233199>, inscrevam-se!`
+                `📅 **Início:** <t:${timestamp}:F>\n` +
+                `⚠️ <@&1100422246998233199>, inscrevam-se!`
             );
 
             dados.ultimaDataMsgId = msgAnuncio.id;
@@ -593,9 +600,6 @@ client.on('interactionCreate', async interaction => {
         if (interaction.commandName === 'adicionar') {
             await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
-            const canalId = interaction.channel.id;
-            const dados = await Instancia.findOne({ eventoId: canalId });
-
             if (!dados) {
                 return interaction.editReply({ content: '❌ Nenhuma instância ativa neste tópico.' });
             }
@@ -610,7 +614,7 @@ client.on('interactionCreate', async interaction => {
             }
 
             const targetUser = interaction.options.getUser('usuario');
-            const targetId = `<@${targetUser.id}>`;
+            const targetId = targetUser.id;
             
             const classeEscolhida = interaction.options.getString('classe');
             const infoInstancia = CONFIG_INSTANCIAS[dados.tipoInstancia];
@@ -666,76 +670,78 @@ client.on('interactionCreate', async interaction => {
         if (interaction.commandName === 'remover') {
             await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
-            const canalId = interaction.channel.id;
-            const dados = await Instancia.findOne({ eventoId: canalId });
-
             if (!dados) {
-                return interaction.editReply({ 
-                    content: '❌ Nenhuma instância ativa neste tópico.', 
-                    flags: [MessageFlags.Ephemeral] 
-                });
+                return interaction.editReply({ content: '❌ Nenhuma instância ativa neste tópico.' });
             }
 
             const isDono = interaction.user.id === dados.criadorId;
             const isAdm = interaction.member.permissions.has('Administrator');
 
             if (!isDono && !isAdm) {
-                return interaction.editReply({ 
-                    content: '❌ Apenas o Líder do Grupo ou um Administrador podem remover membros manualmente.', 
-                    flags: [MessageFlags.Ephemeral] 
-                });
+                return interaction.editReply({ content: '❌ Apenas o Líder ou Admin podem remover membros.' });
             }
             
             const targetUser = interaction.options.getUser('usuario');
-            const targetId = `<@${targetUser.id}>`;
+            const targetId = targetUser.id;
 
+            let classeQueVagou = null;
             let removido = false;
-            dados.inscritos.forEach((lista, classe) => {
-                if (lista.includes(targetId)) {
-                    const novaLista = lista.filter(id => id !== targetId);
-                    dados.inscritos.set(classe, novaLista);
+
+            for (const [classe, lista] of dados.inscritos.entries()) {
+                const encontrou = lista.find(item => item.startsWith(targetId));
+                
+                if (encontrou) {
+                    dados.inscritos.set(classe, lista.filter(item => item !== encontrou));
                     removido = true;
+                    if (classe !== 'Reserva') classeQueVagou = classe;
+                    break; 
                 }
-            });
+            }
 
             if (!removido) {
-                return interaction.editReply({ 
-                    content: `❌ O usuário **${targetUser.username}** não foi encontrado em nenhuma vaga.`, 
-                    flags: [MessageFlags.Ephemeral] 
-                });
+                return interaction.editReply({ content: `❌ **${targetUser.username}** não encontrado.` });
+            }
+
+            if (classeQueVagou) {
+                const listaReservas = dados.inscritos.get('Reserva') || [];
+                const indexReserva = listaReservas.findIndex(item => item.includes(`|${classeQueVagou}`));
+
+                if (indexReserva !== -1) {
+                    const [idReserva] = listaReservas[indexReserva].split('|');
+                    listaReservas.splice(indexReserva, 1);
+                    
+                    const listaTitular = dados.inscritos.get(classeQueVagou) || [];
+                    listaTitular.push(idReserva);
+                    
+                    dados.inscritos.set('Reserva', listaReservas);
+                    dados.inscritos.set(classeQueVagou, listaTitular);
+
+                    await interaction.channel.send({
+                        content: `🎊 **Vaga Preenchida via Administração!** <@${idReserva}> foi movido para **${classeQueVagou}** após a remoção de um membro!`
+                    });
+                }
             }
 
             await dados.save();
-
-            await interaction.editReply({ 
-                content: `✅ **${targetUser.username}** foi removido da instância com sucesso!`, 
-                flags: [MessageFlags.Ephemeral] 
-            });
+            await interaction.editReply({ content: `✅ **${targetUser.username}** removido com sucesso!` });
 
             try {
                 const embedAtualizado = await gerarEmbed(canalId);
-                
                 if (dados.painelId) {
                     const msgPainel = await interaction.channel.messages.fetch(dados.painelId).catch(() => null);
-                    
-                    if (msgPainel && typeof msgPainel.edit === 'function') {
+                    if (msgPainel) {
                         await msgPainel.edit({ embeds: [embedAtualizado] });
-                        return; 
+                        return;
                     }
                 }
-
                 const novaMsg = await interaction.channel.send({ 
                     embeds: [embedAtualizado], 
                     components: gerarBotoes(dados.tipoInstancia) 
                 });
-                
                 dados.painelId = novaMsg.id;
                 await dados.save();
-
             } catch (err) {
-                if (err.code !== 10062 && err.code !== 40060) {
-                    console.error("⚠️ Erro ao atualizar painel no /remover:", err.message);
-                }
+                console.error("⚠️ Erro ao atualizar painel no /remover:", err.message);
             }
         }
 
@@ -768,13 +774,13 @@ client.on('interactionCreate', async interaction => {
                             '• **/adicionar** - Selecione o usuário e a classe para colocar alguém direto na vaga.\n' +
                             '• **/remover** - Retira um membro da vaga ocupada através da seleção de usuário.\n' +
                             '• **/lider** - Transfere a liderança do grupo de um membro para outro.\n' +
-                            '• **Botão Resetar:** Limpa todas as vagas da instância atual.'
+                            '• **Botão Reset:** Limpa todas as vagas da instância atual.'
                     },
                     { 
                         name: '💡 Dicas de Ouro', 
                         value: '• Crie um **Tópico Novo** para cada instância para não misturar as listas.\n' +
                             '• As cores da borda do painel mudam: 🟡 (Faltam 2h), 🔴 (Atrasado).\n' +
-                            '• Use o comando **/checklist** logo após marcar a data para orientar o grupo.\n' +
+                            '• • **Auto-Fill:** O bot move reservas para vagas titulares assim que elas abrem.\n' +
                             '• O painel informa visualmente se o grupo tem vagas através de: 🔴 GRUPO CHEIO ou 🟢 VAGAS ABERTAS.\n' +
                             '• O sistema de alertas avisa o grupo automaticamente 24h e 1h antes da instância.'
                     }
@@ -786,9 +792,6 @@ client.on('interactionCreate', async interaction => {
 
         if (interaction.commandName === 'lider') {
             await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-            
-            const canalId = interaction.channel.id;
-            const dados = await Instancia.findOne({ eventoId: canalId });
 
             if (!dados) {
                 return interaction.editReply({ 
@@ -860,7 +863,6 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.isButton()) {
         try {
-            const dados = await Instancia.findOne({ eventoId: canalId });
             if (!dados) return;
 
             const tipoTecnico = dados.tipoInstancia ? dados.tipoInstancia.toLowerCase() : 'et';
@@ -869,99 +871,155 @@ client.on('interactionCreate', async interaction => {
 
             if (interaction.customId === 'reset') {
                 if (!interaction.member.permissions.has('Administrator')) {
-                    return interaction.reply({ 
-                        content: '❌ Apenas administradores podem resetar o grupo.', 
-                        flags: [MessageFlags.Ephemeral] 
-                    });
+                    return interaction.reply({ content: '❌ Apenas administradores podem resetar o grupo.', flags: [64] });
                 }
-
                 const rowConfirm = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('confirmar_reset_total')
-                        .setLabel('SIM, LIMPAR TUDO')
-                        .setStyle(ButtonStyle.Danger),
-                    new ButtonBuilder()
-                        .setCustomId('cancelar_reset')
-                        .setLabel('CANCELAR')
-                        .setStyle(ButtonStyle.Secondary)
+                    new ButtonBuilder().setCustomId('confirmar_reset_total').setLabel('SIM, LIMPAR TUDO').setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder().setCustomId('cancelar_reset').setLabel('CANCELAR').setStyle(ButtonStyle.Secondary)
                 );
-
-                return interaction.reply({ 
-                    content: '⚠️ **VOCÊ TEM CERTEZA?** Isso removerá todos os inscritos e reservas desta instância.', 
-                    components: [rowConfirm],
-                    flags: [MessageFlags.Ephemeral] 
-                });
+                return interaction.reply({ content: '⚠️ **VOCÊ TEM CERTEZA?**', components: [rowConfirm], flags: [64] });
             }
 
             if (interaction.customId === 'confirmar_reset_total') {
-                dados.inscritos = new Map();
+                await interaction.deferUpdate();
+                
+                dados.inscritos.clear(); 
+                dados.markModified('inscritos');
                 await dados.save();
 
-                const embedAtualizado = await gerarEmbed(canalId);
-                const msgPainel = await interaction.channel.messages.fetch(dados.painelId).catch(() => null);
+                const embedVazio = await gerarEmbed(canalId);
                 
+                const msgPainel = await interaction.channel.messages.fetch(dados.painelId).catch(() => null);
                 if (msgPainel) {
-                    await msgPainel.edit({ embeds: [embedAtualizado], components: gerarBotoes(tipoTecnico) });
+                    await msgPainel.edit({ 
+                        embeds: [embedVazio], 
+                        components: gerarBotoes(tipoTecnico) 
+                    });
                 }
 
-                return interaction.update({ 
-                    content: '✅ Grupo resetado com sucesso!', 
-                    components: [], 
-                    flags: [MessageFlags.Ephemeral] 
+                return interaction.editReply({ 
+                    content: '✅ Grupo resetado com sucesso e painel atualizado!', 
+                    components: [] 
                 });
             }
 
             if (interaction.customId === 'cancelar_reset') {
-                return interaction.update({ content: '❌ Reset cancelado.', components: [], flags: [MessageFlags.Ephemeral] });
+                return interaction.update({ content: '❌ Reset cancelado.', components: [], flags: [64] });
             }
 
             if (interaction.customId === 'sair') {
-                dados.inscritos.forEach((l, k) => {
-                    dados.inscritos.set(k, l.filter(id => id !== userId));
-                });
-            } else {
-                const classe = interaction.customId.replace('insc_', '');
-                
-                if (classe !== 'Reserva') {
-                    let totalAtual = 0;
-                    dados.inscritos.forEach((lista, nomeClasse) => {
-                        if (nomeClasse !== 'Reserva') totalAtual += lista.length;
-                    });
+                await interaction.deferUpdate();
+                let classeQueVagou = null;
+                let removido = false;
 
-                    if (totalAtual >= limiteMaximo) {
-                        return interaction.reply({ 
-                            content: `❌ Este grupo já atingiu o limite de **${limiteMaximo}** pessoas.`, 
-                            flags: [MessageFlags.Ephemeral] 
-                        });
+                dados.inscritos.forEach((lista, classe) => {
+                    const itemEncontrado = lista.find(id => id.startsWith(userId));
+                    if (itemEncontrado) {
+                        dados.inscritos.set(classe, lista.filter(id => id !== itemEncontrado));
+                        removido = true;
+                        if (classe !== 'Reserva') classeQueVagou = classe;
+                    }
+                });
+
+                if (!removido) return;
+
+                if (classeQueVagou) {
+                    const listaReservas = dados.inscritos.get('Reserva') || [];
+                    const indexReserva = listaReservas.findIndex(item => item.includes(`|${classeQueVagou}`));
+
+                    if (indexReserva !== -1) {
+                        const [idReserva] = listaReservas[indexReserva].split('|');
+                        listaReservas.splice(indexReserva, 1);
+                        const listaTitular = dados.inscritos.get(classeQueVagou) || [];
+                        listaTitular.push(idReserva);
+                        dados.inscritos.set('Reserva', listaReservas);
+                        dados.inscritos.set(classeQueVagou, listaTitular);
+                        await interaction.channel.send(`🎊 **Vaga Preenchida!** <@${idReserva}> subiu para **${classeQueVagou}**!`);
                     }
                 }
-                
-                const lista = dados.inscritos.get(classe) || [];
-                let jaInscrito = false;
-                dados.inscritos.forEach(l => { if (l.includes(userId)) jaInscrito = true; });
 
-                if (jaInscrito) {
-                    return interaction.reply({ content: '❌ Você já está inscrito!', flags: [MessageFlags.Ephemeral] });
-                }
+                await dados.save();
+                return interaction.editReply({ embeds: [await gerarEmbed(canalId)], components: gerarBotoes(tipoTecnico) });
+            } 
+
+            else {
+                const classe = interaction.customId.replace('insc_', '');
                 
+                let jaInscrito = false;
+                dados.inscritos.forEach(l => { if (l.some(id => id.startsWith(userId))) jaInscrito = true; });
+                if (jaInscrito) return interaction.reply({ content: '❌ Você já está inscrito!', flags: [64] });
+
+                if (classe === 'Reserva') {
+                    const opcoes = Object.keys(infoInstancia.classes)
+                        .filter(c => c !== 'Reserva')
+                        .map(c => ({ label: c, value: c, emoji: infoInstancia.classes[c].emoji }));
+
+                    const menu = new StringSelectMenuBuilder()
+                        .setCustomId('selecionar_reserva_classe')
+                        .setPlaceholder('Reserva para qual função?')
+                        .addOptions(opcoes);
+
+                    return interaction.reply({ 
+                        content: '⏳ Escolha a classe que deseja cobrir na reserva:', 
+                        components: [new ActionRowBuilder().addComponents(menu)], 
+                        flags: [64] 
+                    });
+                }
+
+                let totalTitulares = 0;
+                dados.inscritos.forEach((lista, nome) => { if (nome !== 'Reserva') totalTitulares += lista.length; });
+                
+                if (totalTitulares >= limiteMaximo) {
+                    return interaction.reply({ content: `❌ Grupo cheio! Vá para a reserva.`, flags: [64] });
+                }
+
+                const lista = dados.inscritos.get(classe) || [];
                 if (lista.length >= infoInstancia.classes[classe].limite) {
-                    return interaction.reply({ content: '❌ Classe cheia!', flags: [MessageFlags.Ephemeral] });
+                    return interaction.reply({ content: '❌ Classe cheia!', flags: [64] });
                 }
 
                 lista.push(userId);
                 dados.inscritos.set(classe, lista);
+                await dados.save();
+                
+                return interaction.update({ embeds: [await gerarEmbed(canalId)], components: gerarBotoes(tipoTecnico) });
             }
-
-            await dados.save();
-            
-            await interaction.update({ 
-                embeds: [await gerarEmbed(canalId)],
-                components: gerarBotoes(tipoTecnico)
-            });
 
         } catch (error) {
             if (error.code === 10062 || error.code === 40060) return;
             console.error('⚠️ Erro ao processar clique no botão:', error);
+        }
+    }
+
+    if (interaction.isStringSelectMenu()) {
+        if (interaction.customId === 'selecionar_reserva_classe') {
+            await interaction.deferUpdate();
+            
+            const classeEscolhida = interaction.values[0];
+            const dados = await Instancia.findOne({ eventoId: canalId });
+
+            if (!dados) return;
+
+            const listaReserva = dados.inscritos.get('Reserva') || [];
+            listaReserva.push(`${userId}|${classeEscolhida}`);
+            dados.inscritos.set('Reserva', listaReserva);
+            
+            await dados.save();
+
+            const embedAtualizado = await gerarEmbed(canalId);
+            const tipoTecnico = dados.tipoInstancia.toLowerCase();
+            
+            if (dados.painelId) {
+                const msgPainel = await interaction.channel.messages.fetch(dados.painelId).catch(() => null);
+                if (msgPainel) {
+                    await msgPainel.edit({ embeds: [embedAtualizado], components: gerarBotoes(tipoTecnico) });
+                }
+            }
+
+            return interaction.editReply({ 
+                content: `✅ Você entrou na reserva como **${classeEscolhida}**!`, 
+                components: [] 
+            });
         }
     }
 });
