@@ -29,6 +29,7 @@ const InstanciaSchema = new mongoose.Schema({
     tipoInstancia: { type: String, default: 'et' },
     dataEvento: { type: Date, default: null },
     alertasEnviados: { type: [String], default: [] },
+    alerta30hEnviado: { type: Boolean, default: false },
     ultimaMensagemId: { type: String, default: null },
     ultimaDataMsgId: { type: String, default: null },
     inscritos: { type: Map, of: [String], default: {} }
@@ -123,19 +124,41 @@ function calcularContagem(dataEvento) {
 async function verificarAlertas() {
     const agora = new Date();
     const eventos = await Instancia.find({ dataEvento: { $ne: null } });
+
     for (const evento of eventos) {
         const diffMinutos = Math.floor((evento.dataEvento - agora) / (1000 * 60));
+
+        if (['et', 'ec'].includes(evento.tipoInstancia) && 
+            diffMinutos <= 1800 && 
+            diffMinutos > 0 && 
+            !evento.alerta30hEnviado) {
+            
+            const canal = await client.channels.fetch(evento.eventoId).catch(() => null);
+            if (canal) {
+                const idCargoMembros = "1100422246998233199";
+                await canal.send(`📢 <@&${idCargoMembros}>! O evento **${CONFIG_INSTANCIAS[evento.tipoInstancia].nome}** começa em menos de 2 dias e restam poucas vagas! Inscreva-se para garantir sua participação. ⚔️`);
+                
+                evento.alerta30hEnviado = true;
+                await evento.save();
+            }
+        }
+
         const gatilhos = [
             { m: 1440, nome: '24h' },
             { m: 60,   nome: '1h' }
         ];
+
         for (const g of gatilhos) {
             if (diffMinutos <= g.m && diffMinutos > (g.m - 10) && !evento.alertasEnviados.includes(g.nome)) {
                 const canal = await client.channels.fetch(evento.eventoId).catch(() => null);
                 if (canal) {
                     let mencoes = "";
-                    evento.inscritos.forEach(lista => lista.forEach(id => { if (!mencoes.includes(id)) mencoes += `${id} `; }));
+                    evento.inscritos.forEach(lista => lista.forEach(id => { 
+                        if (!mencoes.includes(id)) mencoes += `<@${id.split('|')[0]}> `; 
+                    }));
+
                     await canal.send(`🔔 **ALERTA DE ${g.nome}!**\n📍 A **${CONFIG_INSTANCIAS[evento.tipoInstancia].nome}** começará em ${g.nome}!\n👥 Participantes: ${mencoes}\n💡 *Dica: Digite **/checklist** para ver os itens e equipamentos obrigatórios.*`);
+                    
                     evento.alertasEnviados.push(g.nome);
                     await evento.save();
                 }
@@ -468,6 +491,7 @@ client.on('interactionCreate', async interaction => {
 
             dados.dataEvento = novaData;
             dados.alertasEnviados = [];
+            dados.alerta30hEnviado = false;
             await dados.save();
 
             const timestamp = Math.floor(novaData.getTime() / 1000);
@@ -946,8 +970,16 @@ client.on('interactionCreate', async interaction => {
                 const classe = interaction.customId.replace('insc_', '');
                 
                 let jaInscrito = false;
-                dados.inscritos.forEach(l => { if (l.some(id => id.startsWith(userId))) jaInscrito = true; });
-                if (jaInscrito) return interaction.reply({ content: '❌ Você já está inscrito!', flags: [64] });
+                dados.inscritos.forEach(lista => { 
+                    if (lista.some(id => id.startsWith(userId))) jaInscrito = true; 
+                });
+
+                if (jaInscrito) {
+                    return interaction.reply({ 
+                        content: '❌ Você já está na lista (Titular ou Reserva). Saia primeiro para trocar de vaga.', 
+                        flags: [64] 
+                    });
+                }
 
                 if (classe === 'Reserva') {
                     const opcoes = Object.keys(infoInstancia.classes)
@@ -982,6 +1014,17 @@ client.on('interactionCreate', async interaction => {
                 dados.inscritos.set(classe, lista);
                 await dados.save();
                 
+                let totalTitularesApos = 0;
+                dados.inscritos.forEach((l, nome) => { if (nome !== 'Reserva') totalTitularesApos += l.length; });
+
+                if (totalTitularesApos === limiteMaximo) {
+                    const listaReservas = dados.inscritos.get('Reserva') || [];
+                    if (listaReservas.length === 0) {
+                        const idCargoMembros = "1100422246998233199";
+                        await interaction.channel.send(`⚠️ <@&${idCargoMembros}>, as vagas **Titulares** estão preenchidas! Inscrições agora apenas como **RESERVA**. ⏳`);
+                    }
+                }
+
                 return interaction.update({ embeds: [await gerarEmbed(canalId)], components: gerarBotoes(tipoTecnico) });
             }
 
@@ -996,9 +1039,20 @@ client.on('interactionCreate', async interaction => {
             await interaction.deferUpdate();
             
             const classeEscolhida = interaction.values[0];
-            const dados = await Instancia.findOne({ eventoId: canalId });
 
             if (!dados) return;
+
+            let jaInscrito = false;
+            dados.inscritos.forEach(lista => { 
+                if (lista.some(id => id.startsWith(userId))) jaInscrito = true; 
+            });
+
+            if (jaInscrito) {
+                return interaction.editReply({ 
+                    content: '❌ Você já se inscreveu em uma vaga enquanto o menu estava aberto!', 
+                    components: [] 
+                });
+            }
 
             const listaReserva = dados.inscritos.get('Reserva') || [];
             listaReserva.push(`${userId}|${classeEscolhida}`);
