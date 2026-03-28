@@ -385,16 +385,32 @@ client.on('interactionCreate', async interaction => {
         if (interaction.commandName === 'adicionar') {
             if (!dados || !CONFIG_INSTANCIAS[dados.tipoInstancia]) return interaction.respond([]);
 
-            const focusedValue = interaction.options.getFocused();
-            const classesDisponiveis = Object.keys(CONFIG_INSTANCIAS[dados.tipoInstancia].classes);
+            const infoInstancia = CONFIG_INSTANCIAS[dados.tipoInstancia];
+            const focusedValue = interaction.options.getFocused().toLowerCase();
+            const classesExistentes = Object.keys(infoInstancia.classes);
+            const listaReservaAtual = dados.inscritos.get('Reserva') || [];
 
-            const filtradas = classesDisponiveis.filter(escolha => 
-                escolha.toLowerCase().includes(focusedValue.toLowerCase())
-            );
+            let opcoes = [];
 
-            return interaction.respond(
-                filtradas.slice(0, 25).map(escolha => ({ name: escolha, value: escolha }))
-            );
+            classesExistentes.forEach(nomeClasse => {
+                if (nomeClasse === 'Reserva') {
+                    if (listaReservaAtual.length < (infoInstancia.classes['Reserva'].limite || 5)) {
+                        classesExistentes.forEach(cTitular => {
+                            if (cTitular !== 'Reserva') {
+                                opcoes.push({ name: `Reserva: ${cTitular}`, value: `Reserva|${cTitular}` });
+                            }
+                        });
+                    }
+                } else {
+                    const ocupados = dados.inscritos.get(nomeClasse)?.length || 0;
+                    if (ocupados < infoInstancia.classes[nomeClasse].limite) {
+                        opcoes.push({ name: nomeClasse, value: nomeClasse });
+                    }
+                }
+            });
+
+            const filtradas = opcoes.filter(o => o.name.toLowerCase().includes(focusedValue));
+            return interaction.respond(filtradas.slice(0, 25));
         }
     }
 
@@ -639,33 +655,57 @@ client.on('interactionCreate', async interaction => {
 
             const targetUser = interaction.options.getUser('usuario');
             const targetId = targetUser.id;
+            const inputClasse = interaction.options.getString('classe');
             
-            const classeEscolhida = interaction.options.getString('classe');
             const infoInstancia = CONFIG_INSTANCIAS[dados.tipoInstancia];
-            if (!infoInstancia.classes[classeEscolhida]) {
-                return interaction.editReply({ 
-                    content: `❌ A classe **${classeEscolhida}** não existe na configuração de ${infoInstancia.nome}.`
-                });
+
+            const isReserva = inputClasse.startsWith('Reserva|');
+            const classeFinal = isReserva ? 'Reserva' : inputClasse;
+            const metadadoReserva = isReserva ? `|${inputClasse.split('|')[1]}` : "";
+
+            if (!infoInstancia.classes[classeFinal]) {
+                return interaction.editReply({ content: '❌ Classe inválida.' });
             }
 
-            const lista = dados.inscritos.get(classeEscolhida) || [];
             let jaInscrito = false;
-            dados.inscritos.forEach(l => { if (l.includes(targetId)) jaInscrito = true; });
+            dados.inscritos.forEach(l => { 
+                if (l.some(id => id.startsWith(targetId))) jaInscrito = true; 
+            });
 
             if (jaInscrito) {
-                return interaction.editReply({ content: '❌ Este usuário já está inscrito em uma classe!' });
+                return interaction.editReply({ content: '❌ Este usuário já está inscrito!' });
             }
 
-            if (lista.length >= infoInstancia.classes[classeEscolhida].limite) {
-                return interaction.editReply({ content: '❌ Esta classe já está cheia!' });
+            const lista = dados.inscritos.get(classeFinal) || [];
+            if (lista.length >= infoInstancia.classes[classeFinal].limite) {
+                return interaction.editReply({ content: '❌ Esta classe/reserva está cheia!' });
             }
 
-            lista.push(targetId);
-            dados.inscritos.set(classeEscolhida, lista);
+            lista.push(`${targetId}${metadadoReserva}`);
+            dados.inscritos.set(classeFinal, lista);
             await dados.save();
 
-            await interaction.editReply({ content: `✅ ${targetUser.username} adicionado como **${classeEscolhida}**!` });
-            
+            const infoInstanciaApos = CONFIG_INSTANCIAS[dados.tipoInstancia];
+            const limiteMaximo = infoInstanciaApos?.limiteGrupo || 12;
+
+            let totalTitularesApos = 0;
+            dados.inscritos.forEach((l, nome) => { 
+                if (nome !== 'Reserva') totalTitularesApos += l.length; 
+            });
+
+            if (totalTitularesApos === limiteMaximo) {
+                const listaReservas = dados.inscritos.get('Reserva') || [];
+                if (listaReservas.length === 0) {
+                    const idCargoMembros = "1100422246998233199";
+                    await interaction.channel.send({
+                        content: `⚠️ <@&${idCargoMembros}>, as vagas **Titulares** foram preenchidas manualmente! Inscrições a partir de agora apenas na **RESERVA**. ⏳`
+                    });
+                }
+            }
+
+            await interaction.editReply({ 
+                content: `✅ **${targetUser.username}** adicionado como **${isReserva ? inputClasse.replace('|', ' de ') : inputClasse}**!` 
+            });
             try {
                 const embedAtualizado = await gerarEmbed(canalId);
                 
